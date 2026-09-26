@@ -35,6 +35,22 @@ def health():
     return {"status": "ok", "asr_model": _model_name, "loaded": _model is not None}
 
 
+def words(result):
+    merged = []
+    for sentence in result.sentences:
+        for token in sentence.tokens:
+            if token.text.startswith(" ") or not merged:
+                merged.append({"text": token.text.strip(), "start": token.start, "end": token.end})
+            else:
+                merged[-1]["text"] += token.text
+                merged[-1]["end"] = token.end
+    return [
+        {"text": w["text"], "start": round(w["start"], 3), "end": round(w["end"], 3)}
+        for w in merged
+        if w["text"]
+    ]
+
+
 # async on purpose: MLX streams are thread-local, so inference must stay on the
 # event-loop thread that loaded the model (sync endpoints run in a threadpool).
 @app.post("/transcribe")
@@ -48,6 +64,15 @@ async def transcribe(file: UploadFile = File(...)):
         result = get_model().transcribe(path)
         return {
             "text": result.text.strip(),
+            # Sentence timings let the app stream: it keeps only sentences that were
+            # followed by more speech, and re-transcribes the last one with the next audio.
+            "sentences": [
+                {"text": s.text.strip(), "start": round(s.start, 3), "end": round(s.end, 3)}
+                for s in result.sentences
+            ],
+            # Word timings (sub-word tokens merged, punctuation attached) let the app
+            # commit run-on speech that has no sentence breaks.
+            "words": words(result),
             "duration_ms": int((time.perf_counter() - start) * 1000),
         }
     except Exception as exc:  # surfaced to the app as a readable error

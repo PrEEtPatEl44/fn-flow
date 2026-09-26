@@ -163,6 +163,11 @@ final class AIBridge {
     }
 
     func transcribe(wav: Data) async throws -> String {
+        try await transcription(wav: wav).text
+    }
+
+    /// Transcript plus per-sentence timings (seconds from the start of `wav`).
+    func transcription(wav: Data) async throws -> Transcription {
         let url = RuntimeManager.shared.asrBaseURL.appendingPathComponent("transcribe")
         var request = URLRequest(url: url, timeoutInterval: 60)
         request.httpMethod = "POST"
@@ -187,7 +192,7 @@ final class AIBridge {
             let detail = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.detail ?? "server error"
             throw FlowError.transcriptionFailed(detail)
         }
-        return try JSONDecoder().decode(TranscriptionResponse.self, from: data).text
+        return try JSONDecoder().decode(Transcription.self, from: data)
     }
 
     /// Nemotron cleanup via Ollama's chat API.
@@ -235,7 +240,20 @@ final class AIBridge {
     }
 }
 
-private struct TranscriptionResponse: Decodable { let text: String }
+struct Transcription: Decodable, Sendable {
+    /// A timed piece of the transcript (a sentence or a word).
+    struct Span: Decodable, Sendable {
+        let text: String
+        let start: TimeInterval
+        let end: TimeInterval
+    }
+
+    let text: String
+    /// Missing from older runtime servers.
+    let sentences: [Span]?
+    /// Words with punctuation attached; missing from older runtime servers.
+    let words: [Span]?
+}
 private struct ErrorResponse: Decodable { let detail: String }
 
 private struct ChatMessage: Codable { let role: String; let content: String }

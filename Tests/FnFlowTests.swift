@@ -410,3 +410,38 @@ struct ChunkingTests {
         #expect(TextCleaner.continuing("To the new cluster.") == "to the new cluster.")
     }
 }
+
+struct StreamingTests {
+    @Test func segmenterCutsAtPauses() {
+        // 5 s of "speech", a 0.3 s pause, then 2 s more.
+        let tone = (0..<80_000).map { Int16(truncatingIfNeeded: ($0 % 40 < 20) ? 8_000 : -8_000) }
+        let samples = tone + [Int16](repeating: 0, count: 4_800) + Array(tone.prefix(32_000))
+        let segmenter = PauseSegmenter(minSegment: 4, minPause: 0.2, maxSegment: 12)
+        let cut = segmenter.cutPoint(in: samples, from: 0)
+        #expect(cut != nil && cut! > 80_000 && cut! < 84_800)
+        // Not before the minimum segment length.
+        #expect(segmenter.cutPoint(in: Array(samples.prefix(40_000)), from: 0) == nil)
+        // Continuous speech still gets cut at the maximum length, past the minimum.
+        let fast = PauseSegmenter(minSegment: 1.5, minPause: 0.2, maxSegment: 3)
+        let forced = fast.cutPoint(in: tone, from: 0)
+        #expect(forced != nil && forced! >= 24_000 && forced! <= 48_000)
+        // Regression: the quietest frame being the first one must not return `start` (that
+        // made the caller loop forever).
+        let quietStart = [Int16](repeating: 0, count: 320) + Array(tone.prefix(48_000))
+        let cut2 = fast.cutPoint(in: quietStart, from: 0)
+        #expect(cut2 != nil && cut2! > 0)
+        // Driving it like StreamingDictation does always terminates and advances.
+        var start = 0, cuts = 0
+        while let next = fast.cutPoint(in: tone, from: start), cuts < 100 {
+            #expect(next > start)
+            start = next
+            cuts += 1
+        }
+        #expect(cuts < 100)
+    }
+
+    @Test func wavRoundTrip() {
+        let samples: [Int16] = [0, 1, -1, 32_767, -32_768, 1_234]
+        #expect(WAV.decode(WAV.encode(samples[...])) == samples)
+    }
+}
