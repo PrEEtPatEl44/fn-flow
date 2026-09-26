@@ -65,10 +65,6 @@ final class RecordingManager: ObservableObject {
         return (fileURL, duration)
     }
 
-    func cancel() {
-        _ = stop()
-    }
-
     private func updateMeter() {
         guard let recorder else { return }
         recorder.updateMeters()

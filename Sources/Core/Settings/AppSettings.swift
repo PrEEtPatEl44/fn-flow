@@ -1,14 +1,23 @@
 import Foundation
 
 enum OverlayPlacement: String, CaseIterable, Identifiable, Sendable {
-    case followCursor, bottomCenter
+    case bottomCenter, leftCenter, rightCenter, followCursor
+
     var id: String { rawValue }
     var label: String {
         switch self {
+        case .bottomCenter: "Bottom center"
+        case .leftCenter: "Left side"
+        case .rightCenter: "Right side"
         case .followCursor: "Follow mouse cursor"
-        case .bottomCenter: "Bottom center of screen"
         }
     }
+
+    /// The fixed spots on the screen's edges. No top spot: it would sit under the notch.
+    static let edges: [OverlayPlacement] = [.bottomCenter, .leftCenter, .rightCenter]
+
+    /// On the side edges the pill stands upright.
+    var isVertical: Bool { self == .leftCenter || self == .rightCenter }
 }
 
 /// User preferences, persisted to UserDefaults.
@@ -33,6 +42,8 @@ final class AppSettings: ObservableObject {
         }
     }
     @Published var overlayPlacement: OverlayPlacement { didSet { defaults.set(overlayPlacement.rawValue, forKey: "overlayPlacement") } }
+    /// Keep a small pill on screen between dictations (not in follow-cursor mode).
+    @Published var showIdlePill: Bool { didSet { defaults.set(showIdlePill, forKey: "showIdlePill") } }
     @Published var refineWithLLM: Bool { didSet { defaults.set(refineWithLLM, forKey: "refineWithLLM") } }
     @Published var llmModel: String { didSet { defaults.set(llmModel, forKey: "llmModel") } }
     @Published var learnFromCorrections: Bool { didSet { defaults.set(learnFromCorrections, forKey: "learnFromCorrections") } }
@@ -42,7 +53,8 @@ final class AppSettings: ObservableObject {
         defaults.register(defaults: [
             "pasteAtCursor": true,
             "copyToClipboard": true,
-            "overlayPlacement": OverlayPlacement.followCursor.rawValue,
+            "overlayPlacement": OverlayPlacement.bottomCenter.rawValue,
+            "showIdlePill": true,
             "refineWithLLM": true,
             "llmModel": "nemotron-mini",
             "learnFromCorrections": true,
@@ -52,7 +64,8 @@ final class AppSettings: ObservableObject {
         Self.migrateOutputMode(defaults)
         pasteAtCursor = defaults.bool(forKey: "pasteAtCursor")
         copyToClipboard = defaults.bool(forKey: "copyToClipboard") || !defaults.bool(forKey: "pasteAtCursor")
-        overlayPlacement = OverlayPlacement(rawValue: defaults.string(forKey: "overlayPlacement") ?? "") ?? .followCursor
+        overlayPlacement = OverlayPlacement(rawValue: defaults.string(forKey: "overlayPlacement") ?? "") ?? .bottomCenter
+        showIdlePill = defaults.bool(forKey: "showIdlePill")
         refineWithLLM = defaults.bool(forKey: "refineWithLLM")
         llmModel = defaults.string(forKey: "llmModel") ?? "nemotron-mini"
         learnFromCorrections = defaults.bool(forKey: "learnFromCorrections")

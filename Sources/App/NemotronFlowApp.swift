@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         FlowController.shared.setUp()
+        IdlePillController.shared.start()
 
         if !HotkeyManager.shared.start() {
             // No Accessibility yet: ask, and start listening as soon as it's granted.

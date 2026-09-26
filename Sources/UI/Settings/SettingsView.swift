@@ -97,6 +97,13 @@ private struct GeneralSettings: View {
                 Picker("Position", selection: $settings.overlayPlacement) {
                     ForEach(OverlayPlacement.allCases) { Text($0.label).tag($0) }
                 }
+                Toggle("Show resting pill between dictations", isOn: $settings.showIdlePill)
+                    .disabled(settings.overlayPlacement == .followCursor)
+                Text(settings.overlayPlacement == .followCursor
+                     ? "The overlay appears under your mouse pointer while you dictate."
+                     : "You can also drag the resting pill to another edge, or right-click it.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

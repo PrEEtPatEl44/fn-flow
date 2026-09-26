@@ -10,7 +10,14 @@ final class HotkeyManager {
 
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
+    /// Esc while dictating: a deliberate cancel.
     var onCancel: (() -> Void)?
+    /// The modifier hotkey turned out to be part of a normal shortcut (e.g. ⌥←): drop the
+    /// dictation silently.
+    var onAbort: (() -> Void)?
+    /// Set while dictating, so Esc cancels even when the hotkey isn't held (a dictation
+    /// started by clicking the overlay).
+    var escapeCancels = false
 
     /// While set, the next shortcut the user presses is delivered here (nil = cancelled
     /// with Esc) instead of triggering dictation.
@@ -86,6 +93,11 @@ final class HotkeyManager {
             return false // never swallow modifier changes
 
         case .keyDown:
+            if escapeCancels, keyCode == Self.escKeyCode {
+                isHeld = false
+                fire(onCancel)
+                return true
+            }
             if isHeld {
                 if keyCode == Self.escKeyCode {
                     isHeld = false
@@ -96,7 +108,7 @@ final class HotkeyManager {
                     // The modifier was really the start of a normal shortcut (e.g. ⌥←).
                     if Date().timeIntervalSince(pressedAt) < 0.5 {
                         isHeld = false
-                        fire(onCancel)
+                        fire(onAbort)
                     }
                     return false
                 }
