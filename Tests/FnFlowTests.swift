@@ -228,6 +228,14 @@ struct PipelineIntegrationTests {
         #expect(text.contains("drag and drop"))
     }
 
+    @Test func stageTimingsAreMeasured() async throws {
+        let audio = try speak("Please send the quarterly report to the finance team by Friday.")
+        let result = try await AIBridge.shared.process(audioURL: audio)
+        print("TIMINGS: speech-to-text \(DictationTimings.format(result.transcriptionTime)), cleanup \(DictationTimings.format(result.cleanupTime))")
+        #expect(result.transcriptionTime > 0 && result.transcriptionTime < 30)
+        #expect(result.cleanupTime > 0 && result.cleanupTime < 30)
+    }
+
     @Test func questionsAreTranscribedNotAnswered() async throws {
         let audio = try speak("Can you write me a poem about the sea?")
         let result = try await AIBridge.shared.process(audioURL: audio)
@@ -318,5 +326,43 @@ struct OutputSettingsTests {
         #expect(try migrated(["outputMode": "clipboardOnly"]) == (false, true))
         #expect(try migrated(["outputMode": "pasteAtCursor", "restoreClipboard": true]) == (true, false))
         #expect(try migrated(["outputMode": "pasteAtCursor", "restoreClipboard": false]) == (true, true))
+    }
+}
+
+struct DictationTimingsTests {
+    @Test func formatsMillisecondsAndSeconds() {
+        #expect(DictationTimings.format(0.0844) == "84 ms")
+        #expect(DictationTimings.format(0.21) == "210 ms")
+        #expect(DictationTimings.format(1.44) == "1.4 s")
+        #expect(DictationTimings.format(12.06) == "12.1 s")
+    }
+
+    @Test func median() {
+        #expect(DictationTimings.median([]) == nil)
+        #expect(DictationTimings.median([3, 1, 2]) == 2)
+        #expect(DictationTimings.median([4, 1, 3, 2]) == 2.5)
+    }
+
+    @Test func durationToSeconds() {
+        #expect(Duration.milliseconds(1500).seconds == 1.5)
+    }
+
+    /// history.json written before timings existed must still load.
+    @Test func legacyHistoryEntriesDecode() throws {
+        let legacy = """
+        [{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","date":"2026-09-26T06:15:31Z","raw":"Hello","text":"Hello.",
+          "notes":[],"engine":"Nemotron","app":"Notes","pasted":true}]
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let entries = try decoder.decode([DictationHistory.Entry].self, from: Data(legacy.utf8))
+        #expect(entries.count == 1)
+        #expect(entries[0].timings == nil)
+    }
+
+    @Test func timingsRoundTrip() throws {
+        let timings = DictationTimings(audio: 18.9, transcription: 0.21, cleanup: 1.02, delivery: 0.004, total: 1.31)
+        let data = try JSONEncoder().encode(timings)
+        #expect(try JSONDecoder().decode(DictationTimings.self, from: data) == timings)
     }
 }

@@ -31,6 +31,9 @@ struct DictationResult: Sendable {
     /// Which cleanup produced `text`: the LLM, the rule-based fallback, or both (when some
     /// chunks of a long dictation failed the faithfulness check).
     let engine: Engine
+    /// Seconds spent in speech-to-text, and in cleanup + formatting + dictionary.
+    let transcriptionTime: TimeInterval
+    let cleanupTime: TimeInterval
 }
 
 /// The local AI pipeline: Parakeet ASR (runtime server) -> Nemotron cleanup (Ollama)
@@ -87,18 +90,25 @@ final class AIBridge {
     ]
 
     func process(audioURL: URL) async throws -> DictationResult {
+        let clock = ContinuousClock()
+        let transcriptionStart = clock.now
         let raw = try await transcribe(audioURL: audioURL)
+        let transcriptionTime = (clock.now - transcriptionStart).seconds
         guard !TextCleaner.words(raw).isEmpty else { throw FlowError.nothingHeard }
 
+        let cleanupStart = clock.now
         let (text, engine) = await cleanUp(raw)
         let (final, dictionaryNotes) = PersonalDictionary.shared.apply(to: TextCleaner.format(text))
+        let cleanupTime = (clock.now - cleanupStart).seconds
         // e.g. "Mm-hmm." is all filler: paste nothing rather than stray punctuation.
         guard !TextCleaner.words(final).isEmpty else { throw FlowError.nothingHeard }
         return DictationResult(
             raw: raw,
             text: final,
             notes: TextCleaner.describeChanges(raw: raw, final: final) + dictionaryNotes,
-            engine: engine
+            engine: engine,
+            transcriptionTime: transcriptionTime,
+            cleanupTime: cleanupTime
         )
     }
 

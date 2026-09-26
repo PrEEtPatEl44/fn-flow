@@ -181,10 +181,21 @@ private struct HistorySettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("What Parakeet heard, and what was delivered. Stored only on this Mac.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What Parakeet heard, and what was delivered. Stored only on this Mac.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    if let median = history.medianLatency() {
+                        Label {
+                            Text("Median **\(DictationTimings.format(median.seconds))** from finishing to text delivered, over the last \(median.sampleSize) dictation\(median.sampleSize == 1 ? "" : "s")")
+                        } icon: {
+                            Image(systemName: "stopwatch")
+                        }
+                        .font(.callout)
+                        .monospacedDigit()
+                    }
+                }
                 Spacer()
                 Button("Clear History…") { confirmClear = true }
                     .disabled(history.entries.isEmpty)
@@ -229,6 +240,17 @@ private struct HistoryRow: View {
         }
     }
 
+    /// "Speech-to-text 210 ms · Cleanup 1.0 s · Paste 4 ms · 18.9 s of audio"
+    private func breakdown(_ t: DictationTimings) -> String {
+        let f = DictationTimings.format
+        return [
+            "Speech-to-text \(f(t.transcription))",
+            "Cleanup \(f(t.cleanup))",
+            "\(entry.pasted ? "Paste" : "Copy") \(f(t.delivery))",
+            String(format: "%.1f s of audio", t.audio),
+        ].joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -243,6 +265,12 @@ private struct HistoryRow: View {
                     .padding(.vertical, 1)
                     .background(Capsule().fill(engineColor.opacity(0.2)))
                     .help(engineHelp)
+                if let timings = entry.timings {
+                    Label(DictationTimings.format(timings.total), systemImage: "stopwatch")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .help("Time from finishing the dictation to the text being \(entry.pasted ? "pasted" : "copied")")
+                }
                 Spacer()
                 Button {
                     NSPasteboard.general.clearContents()
@@ -282,6 +310,13 @@ private struct HistoryRow: View {
                 Text(entry.notes.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.blue)
+            }
+
+            if let timings = entry.timings {
+                Text(breakdown(timings))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 6)
