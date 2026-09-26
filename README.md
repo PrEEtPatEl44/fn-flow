@@ -1,4 +1,4 @@
-# Nemotron Flow
+# Fn-flow
 
 Hold a hotkey, speak, release: your words are transcribed and cleaned up locally,
 then pasted wherever your text cursor is. See [PRD.md](PRD.md).
@@ -49,7 +49,7 @@ hotkey up   → Parakeet (local server, :8765) → Nemotron (Ollama) → persona
 
 ```bash
 swift build && swift test
-NEMOTRON_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # needs the runtime running
+FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # needs the runtime running
 ```
 
 Without an Apple Development signing identity, builds are signed ad-hoc and macOS

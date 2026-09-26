@@ -26,7 +26,7 @@ final class SettingsWindowController {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Nemotron Flow"
+            window.title = "Fn-flow"
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView(selection: selection))
             window.center()
@@ -385,7 +385,7 @@ private struct DictionarySettings: View {
         Form {
             Section {
                 Toggle("Learn from my manual corrections", isOn: $settings.learnFromCorrections)
-                Text("After pasting, Nemotron Flow watches that text field for a minute. If you fix a misheard word, the fix is saved here and applied to future dictations.")
+                Text("After pasting, Fn-flow watches that text field for a minute. If you fix a misheard word, the fix is saved here and applied to future dictations.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -483,7 +483,7 @@ private struct PermissionsSettings: View {
                 }
             }
             Section {
-                Text("If you rebuilt the app and the hotkey stopped working, remove Nemotron Flow from Accessibility and add it again: macOS ties the grant to the app's code signature.")
+                Text("If you rebuilt the app and the hotkey stopped working, remove Fn-flow from Accessibility and add it again: macOS ties the grant to the app's code signature.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

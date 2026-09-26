@@ -92,6 +92,8 @@ final class AppSettings: ObservableObject {
         defaults.set(try? JSONEncoder().encode(value), forKey: key)
     }
 
+    /// Keeps the app's original folder name so the installed models (~5 GB), history,
+    /// dictionary, and signing keychain carry over after the rename to Fn-flow.
     static var supportDirectory: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NemotronFlow", isDirectory: true)

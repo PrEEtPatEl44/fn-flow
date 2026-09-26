@@ -27,7 +27,7 @@ final class FlowController: ObservableObject {
     private let minimumDuration: TimeInterval = 0.3
     /// Kept after a cancel so "Undo" can still transcribe it.
     private let cancelledRecordingURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("nemotron-flow-cancelled.wav")
+        .appendingPathComponent("fn-flow-cancelled.wav")
 
     func setUp() {
         let hotkeys = HotkeyManager.shared

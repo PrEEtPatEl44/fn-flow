@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import SwiftUI
 import Testing
-@testable import nemotron_flow
+@testable import fn_flow
 
 struct TextCleanerTests {
     @Test func removesFillersAndStutters() {
@@ -179,8 +179,8 @@ struct HotkeyTests {
 }
 
 /// End-to-end against the real local runtime (Parakeet server + Ollama). Opt-in:
-///   NEMOTRON_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["NEMOTRON_FLOW_INTEGRATION"] == "1"))
+///   FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["FN_FLOW_INTEGRATION"] == "1"))
 @MainActor
 struct PipelineIntegrationTests {
     private func speak(_ text: String) throws -> URL {
@@ -307,7 +307,7 @@ struct OutputSettingsTests {
 
     @Test func migratesTheOldSingleOutputMode() throws {
         func migrated(_ old: [String: Any]) throws -> (Bool, Bool) {
-            let suite = "nemotron-flow-tests-\(UUID().uuidString)"
+            let suite = "fn-flow-tests-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             old.forEach { defaults.set($1, forKey: $0) }

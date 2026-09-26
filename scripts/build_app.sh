@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds build/Nemotron Flow.app (release) with Info.plist, bundled runtime scripts,
+# Builds build/Fn-flow.app (release) with Info.plist, bundled runtime scripts,
 # and a code signature (your Apple Development identity if present, else ad-hoc).
 #
 #   scripts/build_app.sh            # build
@@ -9,14 +9,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="build/Nemotron Flow.app"
+APP="build/Fn-flow.app"
 
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/nemotron_flow"
+BIN="$(swift build -c release --show-bin-path)/fn_flow"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/NemotronFlow"
+cp "$BIN" "$APP/Contents/MacOS/FnFlow"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp runtime/install_runtime.sh runtime/server.py "$APP/Contents/Resources/"
 chmod +x "$APP/Contents/Resources/install_runtime.sh"
@@ -28,6 +28,8 @@ chmod +x "$APP/Contents/Resources/install_runtime.sh"
 IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development|Developer ID Application/ {print $2; exit}')"
 KEYCHAIN_ARGS=()
 if [[ -z "$IDENTITY" ]]; then
+    # Name and location predate the rename to Fn-flow; changing them would mint a new
+    # certificate and void the existing Accessibility grant.
     IDENTITY="Nemotron Flow Local Signing"
     SIGN_DIR="$HOME/Library/Application Support/NemotronFlow/signing"
     KEYCHAIN="$SIGN_DIR/signing.keychain-db"
@@ -59,10 +61,10 @@ echo "Built: $APP"
 case "${1:-}" in
     --install)
         mkdir -p "$HOME/Applications"
-        rm -rf "$HOME/Applications/Nemotron Flow.app"
+        rm -rf "$HOME/Applications/Fn-flow.app"
         cp -R "$APP" "$HOME/Applications/"
-        echo "Installed: ~/Applications/Nemotron Flow.app"
-        open "$HOME/Applications/Nemotron Flow.app"
+        echo "Installed: ~/Applications/Fn-flow.app"
+        open "$HOME/Applications/Fn-flow.app"
         ;;
     --run)
         open "$APP"

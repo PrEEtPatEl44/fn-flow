@@ -100,7 +100,7 @@ final class RuntimeManager: ObservableObject {
         var env = processEnvironment
         env["HF_HUB_OFFLINE"] = "1" // the model was downloaded by the installer
         if let model = try? String(contentsOf: asrModelMarker, encoding: .utf8) {
-            env["NEMOTRON_FLOW_ASR_MODEL"] = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            env["FN_FLOW_ASR_MODEL"] = model.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         process.environment = env
         let logURL = runtimeDir.appendingPathComponent("server.log")
@@ -213,8 +213,8 @@ final class RuntimeManager: ObservableObject {
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [script.path]
         var env = processEnvironment
-        env["NEMOTRON_FLOW_RUNTIME_DIR"] = runtimeDir.path
-        env["NEMOTRON_FLOW_LLM_MODEL"] = AppSettings.shared.llmModel
+        env["FN_FLOW_RUNTIME_DIR"] = runtimeDir.path
+        env["FN_FLOW_LLM_MODEL"] = AppSettings.shared.llmModel
         process.environment = env
 
         let pipe = Pipe()

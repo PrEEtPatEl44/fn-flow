@@ -16,7 +16,7 @@ final class RecordingManager: ObservableObject {
     private var startedAt = Date.distantPast
 
     private let fileURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("nemotron-flow-recording.wav")
+        .appendingPathComponent("fn-flow-recording.wav")
 
     static var micAuthorized: Bool {
         AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
