@@ -89,17 +89,32 @@ final class AIBridge {
          "For the quarterly report, we need to add the revenue numbers. Then send it to finance by Friday, and make sure legal reviews it first."),
     ]
 
+    /// Skip Nemotron for chunks the rules already clean up fully (see `TextCleaner.needsLLM`).
+    /// A switch so the benchmark can measure it.
+    static var skipLLMWhenClean = true
+    /// Cap Nemotron's output length near the input's (see `maxOutputTokens`). Also a switch
+    /// for the benchmark.
+    static var capOutput = true
+
+    /// Whole-file path (Undo of a cancelled dictation, tests). Live dictation streams
+    /// through `StreamingDictation`, which uses the same pieces incrementally.
     func process(audioURL: URL) async throws -> DictationResult {
         let clock = ContinuousClock()
         let transcriptionStart = clock.now
-        let raw = try await transcribe(audioURL: audioURL)
+        let raw = try await transcribe(wav: Data(contentsOf: audioURL))
         let transcriptionTime = (clock.now - transcriptionStart).seconds
         guard !TextCleaner.words(raw).isEmpty else { throw FlowError.nothingHeard }
 
         let cleanupStart = clock.now
         let (text, engine) = await cleanUp(raw)
-        let (final, dictionaryNotes) = PersonalDictionary.shared.apply(to: TextCleaner.format(text))
-        let cleanupTime = (clock.now - cleanupStart).seconds
+        return try finalize(raw: raw, cleaned: text, engine: engine, transcriptionTime: transcriptionTime,
+                            cleanupTime: (clock.now - cleanupStart).seconds)
+    }
+
+    /// Formatting + dictionary on cleaned text, and the result the app delivers.
+    func finalize(raw: String, cleaned: String, engine: DictationResult.Engine,
+                  transcriptionTime: TimeInterval, cleanupTime: TimeInterval) throws -> DictationResult {
+        let (final, dictionaryNotes) = PersonalDictionary.shared.apply(to: TextCleaner.format(cleaned))
         // e.g. "Mm-hmm." is all filler: paste nothing rather than stray punctuation.
         guard !TextCleaner.words(final).isEmpty else { throw FlowError.nothingHeard }
         return DictationResult(
@@ -112,44 +127,42 @@ final class AIBridge {
         )
     }
 
-    /// Cleans up a transcript with Nemotron, a few sentences at a time: a 4B model stays
-    /// faithful on short inputs but starts rewriting long ones. Each chunk's output must
-    /// pass `TextCleaner.isFaithful`, otherwise that chunk falls back to the rules.
+    /// Cleans up a transcript a few sentences at a time: a 4B model stays faithful on short
+    /// inputs but starts rewriting long ones.
     func cleanUp(_ raw: String) async -> (text: String, engine: DictationResult.Engine) {
-        let settings = AppSettings.shared
-        guard settings.refineWithLLM else { return (TextCleaner.clean(raw), .rules) }
-
-        let chunks = TextCleaner.chunks(raw)
-        let model = settings.llmModel
-        let terms = PersonalDictionary.shared.terms
-        let refined = await withTaskGroup(of: (Int, String?).self) { group in
-            for (index, chunk) in chunks.enumerated() {
-                group.addTask { (index, try? await self.refine(chunk, model: model, terms: terms)) }
-            }
-            var results = [String?](repeating: nil, count: chunks.count)
-            for await (index, text) in group { results[index] = text }
-            return results
+        var parts: [(raw: String, cleaned: String)] = []
+        var usedLLM = 0, usedRules = 0
+        // Sequential on purpose: Ollama serves one request at a time anyway.
+        for chunk in TextCleaner.chunks(raw) {
+            let (text, llm) = await cleanChunk(chunk)
+            parts.append((chunk, text))
+            if llm { usedLLM += 1 } else { usedRules += 1 }
         }
-
-        var parts: [String] = []
-        var accepted = 0
-        for (chunk, output) in zip(chunks, refined) {
-            if var output, TextCleaner.isFaithful(output, to: chunk) {
-                // A correction cue left in the output means the model didn't apply it.
-                if TextCleaner.hasBacktrackCue(output) {
-                    output = TextCleaner.tidy(TextCleaner.applyBacktracking(output))
-                }
-                parts.append(output)
-                accepted += 1
-            } else {
-                parts.append(TextCleaner.clean(chunk))
-            }
-        }
-        let engine: DictationResult.Engine = accepted == chunks.count ? .nemotron : accepted == 0 ? .rules : .mixed
-        return (parts.joined(separator: " "), engine)
+        return (TextCleaner.joinCleaned(parts), Self.engine(llmChunks: usedLLM, ruleChunks: usedRules))
     }
 
-    func transcribe(audioURL: URL) async throws -> String {
+    static func engine(llmChunks: Int, ruleChunks: Int) -> DictationResult.Engine {
+        llmChunks == 0 ? .rules : ruleChunks == 0 ? .nemotron : .mixed
+    }
+
+    /// Cleans one chunk: Nemotron when it's needed and its output is faithful (see
+    /// `TextCleaner.isFaithful`), otherwise the rules. Returns whether Nemotron was used.
+    func cleanChunk(_ original: String) async -> (text: String, usedLLM: Bool) {
+        let settings = AppSettings.shared
+        let chunk = TextCleaner.applyMidSentenceBacktracking(original)
+        guard settings.refineWithLLM, !Self.skipLLMWhenClean || TextCleaner.needsLLM(chunk),
+              var output = try? await refine(chunk, model: settings.llmModel, terms: PersonalDictionary.shared.terms),
+              TextCleaner.isFaithful(output, to: chunk) else {
+            return (TextCleaner.clean(chunk), false)
+        }
+        // A correction cue left in the output means the model didn't apply it.
+        if TextCleaner.hasBacktrackCue(output) {
+            output = TextCleaner.tidy(TextCleaner.applyBacktracking(output))
+        }
+        return (output, true)
+    }
+
+    func transcribe(wav: Data) async throws -> String {
         let url = RuntimeManager.shared.asrBaseURL.appendingPathComponent("transcribe")
         var request = URLRequest(url: url, timeoutInterval: 60)
         request.httpMethod = "POST"
@@ -160,7 +173,7 @@ final class AIBridge {
         body.append(Data("--\(boundary)\r\n".utf8))
         body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".utf8))
         body.append(Data("Content-Type: audio/wav\r\n\r\n".utf8))
-        body.append(try Data(contentsOf: audioURL))
+        body.append(wav)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
 
         let data: Data
@@ -197,8 +210,10 @@ final class AIBridge {
             model: model,
             messages: messages,
             stream: false,
-            keep_alive: "30m",
-            options: .init(temperature: 0)
+            // Stay loaded: reloading costs seconds on the first dictation after a break.
+            keep_alive: "24h",
+            // Cleanup never needs much more than the input; this also cuts off replies early.
+            options: .init(temperature: 0, num_predict: Self.capOutput ? Self.maxOutputTokens(for: raw) : -1)
         ))
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw FlowError.runtimeNotReady }
@@ -207,6 +222,11 @@ final class AIBridge {
             // The model sometimes markdown-escapes, e.g. "advisor\_turns".
             .replacingOccurrences(of: #"\\([_*`#\[\]])"#, with: "$1", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"")))
+    }
+
+    /// ~1.3 tokens per word, plus headroom for punctuation and small insertions.
+    static func maxOutputTokens(for input: String) -> Int {
+        Int(Double(TextCleaner.words(input).count) * 1.6) + 16
     }
 
     /// Loads the LLM into memory ahead of the first dictation.
@@ -220,7 +240,7 @@ private struct ErrorResponse: Decodable { let detail: String }
 
 private struct ChatMessage: Codable { let role: String; let content: String }
 private struct ChatRequest: Encodable {
-    struct Options: Encodable { let temperature: Double }
+    struct Options: Encodable { let temperature: Double; let num_predict: Int }
     let model: String
     let messages: [ChatMessage]
     let stream: Bool
