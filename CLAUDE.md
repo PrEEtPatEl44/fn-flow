@@ -45,10 +45,17 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (16 kHz LPCM
   and the `asr_model` marker file. It copies the bundled `server.py` over the installed one on
   every start, so edits to `runtime/server.py` ship with the app. Bundled scripts are found in
   the .app's `Resources/`, with a `#filePath` fallback to the repo `runtime/` directory.
-- **LLM output is untrusted.** `nemotron-mini` sometimes answers the transcript instead of
-  cleaning it up. `TextCleaner.isFaithful` rejects any output not built from the spoken words,
-  and falls back to the rule-based `TextCleaner.clean`. Keep that guard when changing the prompt
-  or the model.
+- **The LLM is a cleanup stage, not an assistant, and its output is untrusted.** Left
+  unconstrained, `nemotron-mini` answers, summarizes or outlines dictated instructions ("we
+  need to add…"). Three layers stop that:
+  - The system prompt states its narrow job.
+  - `AIBridge.cleanUp` sends ~45-word sentence chunks, because the small model rewrites
+    long inputs.
+  - `TextCleaner.isFaithful` rejects any chunk that adds words, drops content words, or
+    opens with a reply ("Sure, here's…"). A rejected chunk falls back to `TextCleaner.clean`.
+  Formatting (bullets, question marks) is deliberately **not** in the prompt:
+  `TextCleaner.format` does it deterministically afterwards. Keep few-shot example topics
+  unrelated to real dictation, or the model copies them into the output.
 - **`runtime/server.py` `/transcribe` must stay `async def`.** MLX streams are thread-local, and
   FastAPI runs sync endpoints in a threadpool, which fails with "There is no Stream(cpu, 1)".
 - **Correction learning** (`CorrectionTracker` / `CorrectionDiff`): after a paste, it polls the
