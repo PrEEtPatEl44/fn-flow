@@ -39,7 +39,7 @@ enum TextCleaner {
 
     static let unknownToken = "<unk>"
 
-    /// Removes Parakeet's `<unk>` tokens (see runtime/server.py) and the gaps they leave.
+    /// Removes Parakeet's `<unk>` tokens (see `SpeechEngine`) and the gaps they leave.
     static func stripUnknownTokens(_ text: String) -> String {
         guard text.contains(unknownToken) else { return text }
         return text.replacingOccurrences(of: unknownToken, with: " ")

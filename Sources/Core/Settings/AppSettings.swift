@@ -47,7 +47,6 @@ final class AppSettings: ObservableObject {
     @Published var refineWithLLM: Bool { didSet { defaults.set(refineWithLLM, forKey: "refineWithLLM") } }
     @Published var llmModel: String { didSet { defaults.set(llmModel, forKey: "llmModel") } }
     @Published var learnFromCorrections: Bool { didSet { defaults.set(learnFromCorrections, forKey: "learnFromCorrections") } }
-    @Published var asrPort: Int { didSet { defaults.set(asrPort, forKey: "asrPort") } }
 
     private init() {
         defaults.register(defaults: [
@@ -58,7 +57,6 @@ final class AppSettings: ObservableObject {
             "refineWithLLM": true,
             "llmModel": "nemotron-mini",
             "learnFromCorrections": true,
-            "asrPort": 8765,
         ])
         hotkey = (defaults.data(forKey: "hotkey")).flatMap { try? JSONDecoder().decode(Hotkey.self, from: $0) } ?? .default
         Self.migrateOutputMode(defaults)
@@ -69,7 +67,6 @@ final class AppSettings: ObservableObject {
         refineWithLLM = defaults.bool(forKey: "refineWithLLM")
         llmModel = defaults.string(forKey: "llmModel") ?? "nemotron-mini"
         learnFromCorrections = defaults.bool(forKey: "learnFromCorrections")
-        asrPort = defaults.integer(forKey: "asrPort")
     }
 
     /// Earlier versions had one "outputMode" (paste / clipboard only) plus "restoreClipboard".

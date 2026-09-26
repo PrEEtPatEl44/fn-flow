@@ -326,82 +326,128 @@ private struct HistoryRow: View {
 // MARK: - Models
 
 private struct ModelsSettings: View {
-    @ObservedObject private var runtime = RuntimeManager.shared
+    @ObservedObject private var models = ModelManager.shared
     @ObservedObject private var settings = AppSettings.shared
+    @State private var confirmRemoveLegacy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Form {
-                Section("Local AI runtime (runs entirely on this Mac)") {
-                    StatusRow(title: "Speech-to-text", detail: "NVIDIA Parakeet TDT 0.6B (MLX)", status: runtime.asrStatus)
-                    StatusRow(title: "Text cleanup", detail: "NVIDIA Nemotron via Ollama", status: runtime.llmStatus)
-                    Toggle("Clean up with Nemotron (fillers, self-corrections, formatting)", isOn: $settings.refineWithLLM)
-                    TextField("Ollama model", text: $settings.llmModel)
-                        .onSubmit { Task { await runtime.refreshLLM() } }
-                }
-            }
-            .formStyle(.grouped)
-            .frame(height: 240)
-
-            HStack {
-                Button(runtime.isInstalled ? "Repair / Update Models" : "Install Models") {
-                    runtime.install()
-                }
-                .disabled(runtime.isInstalling)
-                .buttonStyle(.borderedProminent)
-                if runtime.isInstalling {
-                    Button("Cancel") { runtime.cancelInstall() }
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button("Restart Runtime") {
-                        runtime.stopASR()
-                        Task { await runtime.bootstrap() }
+        Form {
+            Section {
+                ModelRow(
+                    title: "Speech-to-text",
+                    detail: "NVIDIA Parakeet TDT 0.6B, running on the Neural Engine · \(ModelManager.speechModelSize)",
+                    status: models.speechStatus
+                ) {
+                    switch models.speechStatus {
+                    case .notInstalled:
+                        Button("Download") { models.downloadSpeechModel() }.buttonStyle(.borderedProminent)
+                    case .failed:
+                        Button("Try Again") {
+                            if models.isSpeechModelInstalled { Task { await models.loadSpeechModel() } }
+                            else { models.downloadSpeechModel() }
+                        }
+                    default:
+                        EmptyView()
                     }
                 }
-                Spacer()
-                Text("~5 GB download, one time").font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Everything runs on this Mac. Audio and text never leave it.")
+            } footer: {
+                Text("Required. Downloaded once from Hugging Face.")
             }
-            .padding(.horizontal)
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(runtime.installLog.isEmpty ? "Installer output appears here." : runtime.installLog)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(runtime.installLog.isEmpty ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding(8)
-                    Color.clear.frame(height: 1).id("end")
+            Section {
+                ModelRow(
+                    title: "Text cleanup (optional)",
+                    detail: "NVIDIA Nemotron via Ollama: removes fillers, applies \"scratch that\", tidies wording",
+                    status: models.cleanupStatus
+                ) {
+                    switch models.cleanupStatus {
+                    case .notInstalled:
+                        Button("Download") { models.downloadCleanupModel() }
+                    case .downloading:
+                        Button("Cancel") { models.cancelCleanupDownload() }
+                    case .unavailable:
+                        Link("Get Ollama", destination: ModelManager.ollamaDownloadURL)
+                        Button("Check Again") { Task { await models.refreshCleanupModel() } }
+                    case .failed:
+                        Button("Try Again") { models.downloadCleanupModel() }
+                    default:
+                        EmptyView()
+                    }
                 }
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-                .onChange(of: runtime.installLog) { proxy.scrollTo("end", anchor: .bottom) }
+                Toggle("Clean up with Nemotron", isOn: $settings.refineWithLLM)
+                TextField("Ollama model", text: $settings.llmModel)
+                    .onSubmit { Task { await models.refreshCleanupModel() } }
+            } footer: {
+                Text("Without Ollama, dictation still works: fillers, stutters, corrections, and lists are handled by built-in rules.")
             }
-            .padding(.horizontal)
+
+            if let size = models.legacyRuntimeSize {
+                Section("Old runtime") {
+                    LabeledContent {
+                        Button("Remove…") { confirmRemoveLegacy = true }
+                            .confirmationDialog("Remove the old Python runtime?", isPresented: $confirmRemoveLegacy) {
+                                Button("Remove \(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))", role: .destructive) {
+                                    models.removeLegacyRuntime()
+                                }
+                            } message: {
+                                Text("It's no longer used: speech-to-text now runs inside Fn-flow.")
+                            }
+                    } label: {
+                        Text("Python runtime from earlier versions")
+                        Text("\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) in Application Support, no longer used")
+                    }
+                }
+            }
         }
+        .formStyle(.grouped)
     }
 }
 
-private struct StatusRow: View {
+private struct ModelRow<Actions: View>: View {
     let title: String
     let detail: String
-    let status: RuntimeManager.Status
+    let status: ModelManager.Status
+    @ViewBuilder var actions: Actions
 
     var body: some View {
-        LabeledContent {
-            HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 8, height: 8)
-                Text(status.label).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent {
+                HStack(spacing: 8) {
+                    // While downloading, the progress bar below says it all.
+                    if !isDownloading {
+                        Circle().fill(color).frame(width: 8, height: 8)
+                        Text(status.label).foregroundStyle(.secondary)
+                    }
+                    actions
+                }
+            } label: {
+                Text(title)
+                Text(detail)
             }
-        } label: {
-            Text(title)
-            Text(detail)
+            if case .downloading(let progress, let detail) = status {
+                ProgressView(value: progress) {
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                } currentValueLabel: {
+                    Text("\(Int(progress * 100))%").font(.caption).monospacedDigit()
+                }
+            } else if status == .loading {
+                ProgressView().progressViewStyle(.linear)
+            }
         }
+    }
+
+    private var isDownloading: Bool {
+        if case .downloading = status { return true }
+        return false
     }
 
     private var color: Color {
         switch status {
         case .ready: .green
-        case .checking, .starting, .installing: .yellow
+        case .checking, .downloading, .loading: .yellow
+        case .unavailable: .gray
         case .notInstalled, .failed: .red
         }
     }

@@ -24,7 +24,7 @@ import Foundation
 /// `releaseCleanupBudget`; past it, Nemotron is cancelled and the rules finish the job.
 @MainActor
 final class StreamingDictation {
-    typealias Transcriber = @MainActor (Data) async throws -> Transcription
+    typealias Transcriber = @MainActor ([Int16]) async throws -> Transcription
     typealias Cleaner = @MainActor (String) async -> (text: String, usedLLM: Bool)
 
     /// Everything recorded so far (16 kHz mono), e.g. to save the recording for Undo.
@@ -89,7 +89,7 @@ final class StreamingDictation {
 
     init(
         releaseCleanupBudget: Duration = .milliseconds(1500),
-        transcriber: @escaping Transcriber = { try await AIBridge.shared.transcription(wav: $0) },
+        transcriber: @escaping Transcriber = { try await AIBridge.shared.transcription($0) },
         cleaner: @escaping Cleaner = { await AIBridge.shared.cleanChunk($0) }
     ) {
         self.releaseCleanupBudget = releaseCleanupBudget
@@ -186,9 +186,9 @@ final class StreamingDictation {
             if final || Double(end - start) / sampleRate > maxUncommitted { committedUntil = end }
             return
         }
-        let wav = WAV.encode(window)
+        let audio = Array(window)
         let transcriber = transcriber
-        let request = Task { try await transcriber(wav) }
+        let request = Task { try await transcriber(audio) }
         asrRequest = request
         defer { asrRequest = nil }
         do {
@@ -202,10 +202,11 @@ final class StreamingDictation {
     }
 
     private func commit(_ result: Transcription, windowStart: Int, windowEnd: Int, final: Bool) {
-        // Parakeet occasionally decodes a stretch as <unk> (the server retries once and strips
+        // Parakeet occasionally decodes a stretch as <unk> (SpeechEngine retries once and strips
         // what's left). Don't commit that window: its audio is transcribed again with the next
         // one. After two bad windows in a row, commit the stripped text so the dictation moves on.
-        if let unknown = result.unknownTokens, unknown > 0 {
+        if result.unknownTokens > 0 {
+            let unknown = result.unknownTokens
             log.error("Window of \(Double(windowEnd - windowStart) / self.sampleRate, format: .fixed(precision: 1))s had \(unknown) <unk> tokens")
             if !final, unknownTokenWindows < 2 {
                 unknownTokenWindows += 1
@@ -214,7 +215,7 @@ final class StreamingDictation {
         }
         unknownTokenWindows = 0
         let words = result.words ?? []
-        // Older servers don't report word timings: take the whole window.
+        // No word timings: take the whole window.
         guard !final, !words.isEmpty else {
             append(committed: result.text)
             committedUntil = windowEnd

@@ -63,8 +63,8 @@ final class FlowController: ObservableObject {
         guard phase == .idle else { return }
         CorrectionTracker.shared.flush()
 
-        guard RuntimeManager.shared.isReady else {
-            log.error("Runtime not ready: \(RuntimeManager.shared.asrStatus.label, privacy: .public)")
+        guard ModelManager.shared.isReady else {
+            log.error("Speech model not ready: \(ModelManager.shared.speechStatus.label, privacy: .public)")
             showError(FlowError.runtimeNotReady.localizedDescription, settingsTab: .models)
             return
         }

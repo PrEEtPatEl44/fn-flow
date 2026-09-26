@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import Testing
 @testable import fn_flow
+import FluidAudio
 
 struct TextCleanerTests {
     @Test func removesFillersAndStutters() {
@@ -212,6 +213,10 @@ struct HotkeyTests {
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["FN_FLOW_INTEGRATION"] == "1"))
 @MainActor
 struct PipelineIntegrationTests {
+    init() async throws {
+        try await TestModels.ensureSpeechModel()
+    }
+
     private func speak(_ text: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("nf-\(UUID().uuidString).wav")
         let say = Process()
@@ -454,7 +459,7 @@ struct StreamingTests {
             transcriber: { _ in
                 calls += 1
                 try await Task.sleep(for: .milliseconds(300))
-                return Transcription(text: "word", sentences: nil, words: nil)
+                return Transcription(text: "word")
             },
             cleaner: { ($0, false) }
         )
@@ -484,7 +489,7 @@ struct StreamingTests {
                     sawCancellation = true
                     throw error
                 }
-                return Transcription(text: "late", sentences: nil, words: nil)
+                return Transcription(text: "late")
             },
             cleaner: { ($0, false) }
         )
@@ -500,7 +505,7 @@ struct StreamingTests {
     @Test func slowCleanupFallsBackToRulesAfterRelease() async throws {
         let dictation = StreamingDictation(
             releaseCleanupBudget: .milliseconds(200),
-            transcriber: { _ in Transcription(text: "Um, send it on Friday.", sentences: nil, words: nil) },
+            transcriber: { _ in Transcription(text: "Um, send it on Friday.") },
             cleaner: { chunk in
                 try? await Task.sleep(for: .seconds(3))
                 return Task.isCancelled ? (TextCleaner.clean(chunk), false) : ("slow", true)
@@ -534,12 +539,19 @@ struct StreamingTests {
         }
     }
 
-    @Test func decodesUnknownTokenCount() throws {
-        let json = #"{"text":"hey","sentences":[],"words":[],"unk_tokens":4}"#
-        let t = try JSONDecoder().decode(Transcription.self, from: Data(json.utf8))
-        #expect(t.unknownTokens == 4)
-        // Older servers don't send it.
-        #expect(try JSONDecoder().decode(Transcription.self, from: Data(#"{"text":"hey"}"#.utf8)).unknownTokens == nil)
+    @Test func engineResultsDropUnknownTokens() {
+        let timing = { (token: String, start: TimeInterval) in
+            TokenTiming(token: token, tokenId: 0, startTime: start, endTime: start + 0.1, confidence: 1)
+        }
+        let result = ASRResult(
+            text: "Hey <unk><unk> there.", confidence: 1, duration: 1, processingTime: 0.1,
+            tokenTimings: [timing("▁Hey", 0), timing("<unk>", 0.2), timing("<unk>", 0.2), timing("▁there", 0.5), timing(".", 0.6)]
+        )
+        #expect(SpeechEngine.unknownCount(result) == 2)
+        let transcription = SpeechEngine.transcription(from: result, unknownTokens: 2)
+        #expect(transcription.text == "Hey there.")
+        #expect(transcription.words?.map(\.text) == ["Hey", "there."])
+        #expect(transcription.unknownTokens == 2)
     }
 
     @Test func segmenterCutsAtPauses() {
@@ -573,5 +585,21 @@ struct StreamingTests {
     @Test func wavRoundTrip() {
         let samples: [Int16] = [0, 1, -1, 32_767, -32_768, 1_234]
         #expect(WAV.decode(WAV.encode(samples[...])) == samples)
+    }
+}
+
+/// Real-model tests need the speech model loaded; downloads it on first use (~480 MB).
+@MainActor
+enum TestModels {
+    struct NotReady: Error { let status: String }
+
+    static func ensureSpeechModel() async throws {
+        let models = ModelManager.shared
+        await models.loadSpeechModel()
+        if models.speechStatus == .notInstalled {
+            models.downloadSpeechModel()
+            while models.speechStatus.isBusy { try await Task.sleep(for: .milliseconds(500)) }
+        }
+        guard models.isReady else { throw NotReady(status: models.speechStatus.label) }
     }
 }
