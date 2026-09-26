@@ -18,6 +18,13 @@ struct TextCleanerTests {
         #expect(TextCleaner.clean("It went well. Meet on Tuesday, no wait, Wednesday") == "It went well. Wednesday.")
     }
 
+    @Test func fillersRemovedFromCleanedText() {
+        #expect(TextCleaner.removeFillers("Here's the update for the platform team, um, on the infrastructure side.")
+                == "Here's the update for the platform team, on the infrastructure side.")
+        #expect(TextCleaner.removeFillers("Uh, send it now.") == "Send it now.")
+        #expect(TextCleaner.removeFillers("Nothing to remove.") == "Nothing to remove.")
+    }
+
     @Test func needsLLMOnlyForRealFillers() {
         #expect(TextCleaner.needsLLM("It's like, the overlay should move."))
         #expect(TextCleaner.needsLLM("And then yeah there is the default option."))

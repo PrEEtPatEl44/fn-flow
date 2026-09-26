@@ -165,7 +165,8 @@ final class AIBridge {
         if TextCleaner.hasBacktrackCue(output) {
             output = TextCleaner.tidy(TextCleaner.applyBacktracking(output))
         }
-        return (output, true)
+        // It occasionally keeps a plain filler ("team, um, on…"); those never belong.
+        return (TextCleaner.removeFillers(output), true)
     }
 
     func transcribe(wav: Data) async throws -> String {
