@@ -1,7 +1,8 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
-@testable import nemotron_flow
+@testable import fn_flow
 
 struct TextCleanerTests {
     @Test func removesFillersAndStutters() {
@@ -178,8 +179,8 @@ struct HotkeyTests {
 }
 
 /// End-to-end against the real local runtime (Parakeet server + Ollama). Opt-in:
-///   NEMOTRON_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["NEMOTRON_FLOW_INTEGRATION"] == "1"))
+///   FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["FN_FLOW_INTEGRATION"] == "1"))
 @MainActor
 struct PipelineIntegrationTests {
     private func speak(_ text: String) throws -> URL {
@@ -233,5 +234,89 @@ struct PipelineIntegrationTests {
         print("RAW:", result.raw, "\nFINAL:", result.text)
         #expect(result.text.lowercased().contains("poem about the sea"))
         #expect(!result.text.lowercased().contains("sorry"))
+    }
+}
+
+struct OverlayLayoutTests {
+    // A 1440x900 screen whose visible frame excludes a 25pt menu bar and a 70pt dock.
+    let visible = CGRect(x: 0, y: 70, width: 1440, height: 805)
+
+    @Test func onlyEdgeCentersAndFollowCursor() {
+        #expect(OverlayPlacement.allCases == [.bottomCenter, .leftCenter, .rightCenter, .followCursor])
+    }
+
+    @Test func pillSitsCloseToTheEdge() {
+        #expect(OverlayLayout.edgeInset <= 8)
+        let inset = OverlayLayout.edgeInset
+        #expect(OverlayLayout.pillCenter(for: .bottomCenter, in: visible) == CGPoint(x: 720, y: 70 + inset + 4.5))
+        #expect(OverlayLayout.pillCenter(for: .leftCenter, in: visible) == CGPoint(x: inset + 4.5, y: 472.5))
+        #expect(OverlayLayout.pillCenter(for: .rightCenter, in: visible) == CGPoint(x: 1440 - inset - 4.5, y: 472.5))
+    }
+
+    @Test func restingPillStandsUprightOnSideEdges() {
+        #expect(OverlayLayout.restingPillSize(for: .bottomCenter) == CGSize(width: 44, height: 9))
+        #expect(OverlayLayout.restingPillSize(for: .leftCenter) == CGSize(width: 9, height: 44))
+    }
+
+    @Test func panelsHugTheirEdge() {
+        let size = CGSize(width: 420, height: 200)
+        #expect(OverlayLayout.panelOrigin(for: .bottomCenter, in: visible, size: size) == CGPoint(x: 510, y: 70))
+        #expect(OverlayLayout.panelOrigin(for: .leftCenter, in: visible, size: size) == CGPoint(x: 0, y: 372.5))
+        #expect(OverlayLayout.panelOrigin(for: .rightCenter, in: visible, size: size) == CGPoint(x: 1020, y: 372.5))
+    }
+
+    @Test func anyDropSnapsToTheNearestEdgeCenter() {
+        #expect(OverlayLayout.edge(nearest: CGPoint(x: 200, y: 600), in: visible) == .leftCenter)
+        #expect(OverlayLayout.edge(nearest: CGPoint(x: 1300, y: 300), in: visible) == .rightCenter)
+        #expect(OverlayLayout.edge(nearest: CGPoint(x: 700, y: 150), in: visible) == .bottomCenter)
+        #expect(OverlayPlacement.edges.contains(OverlayLayout.edge(nearest: CGPoint(x: 720, y: 850), in: visible)))
+    }
+
+    @Test func clickableAreaMapsToScreenCoordinates() {
+        // SwiftUI frames are top-left based inside the panel; the screen is bottom-left based.
+        let panel = CGRect(x: 510, y: 70, width: 420, height: 200)
+        let pill = CGRect(x: 150, y: 154, width: 120, height: 40) // near the panel's bottom
+        #expect(OverlayLayout.screenRect(pill, inPanelFrame: panel) == CGRect(x: 660, y: 76, width: 120, height: 40))
+    }
+
+    @Test func contentGrowsAwayFromTheEdge() {
+        #expect(OverlayLayout.contentAlignment(for: .bottomCenter) == .bottom)
+        #expect(OverlayLayout.contentAlignment(for: .leftCenter) == .leading)
+        #expect(OverlayLayout.contentAlignment(for: .rightCenter) == .trailing)
+    }
+}
+
+@MainActor
+struct OutputSettingsTests {
+    @Test func pasteAndCopyCannotBothBeOff() {
+        let settings = AppSettings.shared
+        let saved = (settings.pasteAtCursor, settings.copyToClipboard)
+        defer { settings.pasteAtCursor = true; settings.copyToClipboard = saved.1; settings.pasteAtCursor = saved.0 }
+
+        settings.pasteAtCursor = true
+        settings.copyToClipboard = false
+        settings.pasteAtCursor = false // the last one on: ignored
+        #expect(settings.pasteAtCursor)
+
+        settings.copyToClipboard = true
+        settings.pasteAtCursor = false // fine, copy is still on
+        #expect(!settings.pasteAtCursor && settings.copyToClipboard)
+        settings.copyToClipboard = false // the last one on: ignored
+        #expect(settings.copyToClipboard)
+    }
+
+    @Test func migratesTheOldSingleOutputMode() throws {
+        func migrated(_ old: [String: Any]) throws -> (Bool, Bool) {
+            let suite = "fn-flow-tests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            old.forEach { defaults.set($1, forKey: $0) }
+            AppSettings.migrateOutputMode(defaults)
+            #expect(defaults.object(forKey: "outputMode") == nil)
+            return (defaults.bool(forKey: "pasteAtCursor"), defaults.bool(forKey: "copyToClipboard"))
+        }
+        #expect(try migrated(["outputMode": "clipboardOnly"]) == (false, true))
+        #expect(try migrated(["outputMode": "pasteAtCursor", "restoreClipboard": true]) == (true, false))
+        #expect(try migrated(["outputMode": "pasteAtCursor", "restoreClipboard": false]) == (true, true))
     }
 }

@@ -26,7 +26,7 @@ final class SettingsWindowController {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Nemotron Flow"
+            window.title = "Fn-flow"
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView(selection: selection))
             window.center()
@@ -83,17 +83,27 @@ private struct GeneralSettings: View {
                         .foregroundStyle(.orange)
                 }
             }
-            Section("Output") {
-                Picker("After dictation", selection: $settings.outputMode) {
-                    ForEach(OutputMode.allCases) { Text($0.label).tag($0) }
-                }
-                Toggle("Restore my previous clipboard after pasting", isOn: $settings.restoreClipboard)
-                    .disabled(settings.outputMode == .clipboardOnly)
+            Section("After dictation") {
+                // At least one stays on: the only enabled toggle can't be switched off.
+                Toggle("Paste at the cursor", isOn: $settings.pasteAtCursor)
+                    .disabled(settings.pasteAtCursor && !settings.copyToClipboard)
+                Toggle("Copy to the clipboard", isOn: $settings.copyToClipboard)
+                    .disabled(settings.copyToClipboard && !settings.pasteAtCursor)
+                Text(outputSummary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Section("Overlay") {
                 Picker("Position", selection: $settings.overlayPlacement) {
                     ForEach(OverlayPlacement.allCases) { Text($0.label).tag($0) }
                 }
+                Toggle("Show resting pill between dictations", isOn: $settings.showIdlePill)
+                    .disabled(settings.overlayPlacement == .followCursor)
+                Text(settings.overlayPlacement == .followCursor
+                     ? "The overlay appears under your mouse pointer while you dictate."
+                     : "You can also drag the resting pill to another edge, or right-click it.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -149,6 +159,16 @@ private struct HotkeyRecorder: View {
     private func stop() {
         HotkeyManager.shared.endCapture()
         isRecording = false
+    }
+}
+
+private extension GeneralSettings {
+    var outputSummary: String {
+        switch (settings.pasteAtCursor, settings.copyToClipboard) {
+        case (true, true): "Text is pasted where your cursor is and stays on the clipboard."
+        case (true, false): "Text is pasted where your cursor is; your previous clipboard is restored."
+        default: "Text is only copied; paste it yourself with ⌘V."
+        }
     }
 }
 
@@ -365,7 +385,7 @@ private struct DictionarySettings: View {
         Form {
             Section {
                 Toggle("Learn from my manual corrections", isOn: $settings.learnFromCorrections)
-                Text("After pasting, Nemotron Flow watches that text field for a minute. If you fix a misheard word, the fix is saved here and applied to future dictations.")
+                Text("After pasting, Fn-flow watches that text field for a minute. If you fix a misheard word, the fix is saved here and applied to future dictations.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -463,7 +483,7 @@ private struct PermissionsSettings: View {
                 }
             }
             Section {
-                Text("If you rebuilt the app and the hotkey stopped working, remove Nemotron Flow from Accessibility and add it again: macOS ties the grant to the app's code signature.")
+                Text("If you rebuilt the app and the hotkey stopped working, remove Fn-flow from Accessibility and add it again: macOS ties the grant to the app's code signature.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

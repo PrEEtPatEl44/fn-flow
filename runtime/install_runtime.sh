@@ -1,5 +1,5 @@
 #!/bin/bash
-# Nemotron Flow local runtime installer.
+# Fn-flow local runtime installer.
 #
 # Installs, fully locally and without touching the system Python:
 #   - uv (into the runtime dir) and a Python 3.12 venv
@@ -10,9 +10,9 @@
 
 set -euo pipefail
 
-RUNTIME_DIR="${NEMOTRON_FLOW_RUNTIME_DIR:-$HOME/Library/Application Support/NemotronFlow/runtime}"
-ASR_MODEL="${NEMOTRON_FLOW_ASR_MODEL:-mlx-community/parakeet-tdt-0.6b-v2}"
-LLM_MODEL="${NEMOTRON_FLOW_LLM_MODEL:-nemotron-mini}"
+RUNTIME_DIR="${FN_FLOW_RUNTIME_DIR:-$HOME/Library/Application Support/NemotronFlow/runtime}"
+ASR_MODEL="${FN_FLOW_ASR_MODEL:-mlx-community/parakeet-tdt-0.6b-v2}"
+LLM_MODEL="${FN_FLOW_LLM_MODEL:-nemotron-mini}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export PATH="$RUNTIME_DIR/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -79,4 +79,4 @@ fi
 ollama pull "$LLM_MODEL"
 
 echo
-echo "INSTALL_OK: Nemotron Flow runtime is ready in $RUNTIME_DIR"
+echo "INSTALL_OK: Fn-flow runtime is ready in $RUNTIME_DIR"

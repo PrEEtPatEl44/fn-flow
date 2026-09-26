@@ -3,13 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Nemotron Flow</string>
+    <string>Fn-flow</string>
     <key>CFBundleDisplayName</key>
-    <string>Nemotron Flow</string>
+    <string>Fn-flow</string>
+    <!-- Kept from the app's original name: changing it would reset the Microphone and
+         Accessibility grants and all saved settings. -->
     <key>CFBundleIdentifier</key>
     <string>dev.nemotronflow.app</string>
     <key>CFBundleExecutable</key>
-    <string>NemotronFlow</string>
+    <string>FnFlow</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -23,8 +25,8 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Nemotron Flow listens while you hold the dictation hotkey. Audio is transcribed locally and never leaves your Mac.</string>
+    <string>Fn-flow listens while you hold the dictation hotkey. Audio is transcribed locally and never leaves your Mac.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Nemotron Flow pastes your dictation into the app you are typing in.</string>
+    <string>Fn-flow pastes your dictation into the app you are typing in.</string>
 </dict>
 </plist>

@@ -4,20 +4,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "nemotron-flow",
+    name: "fn-flow",
     platforms: [.macOS(.v14)],
     targets: [
         // Build a runnable .app (with mic/accessibility permissions) via scripts/build_app.sh.
         .executableTarget(
-            name: "nemotron_flow",
+            name: "fn_flow",
             path: "Sources",
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
         .testTarget(
-            name: "nemotron_flowTests",
-            dependencies: ["nemotron_flow"],
+            name: "fn_flowTests",
+            dependencies: ["fn_flow"],
             path: "Tests",
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),

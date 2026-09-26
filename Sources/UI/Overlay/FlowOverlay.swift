@@ -5,41 +5,87 @@ enum OverlayPhase: Equatable {
     case listening
     case processing
     case success(title: String, notes: [String])
-    case error(String)
-    case toast(String)
 }
 
 @MainActor
 final class OverlayModel: ObservableObject {
     @Published var phase: OverlayPhase = .hidden
+    /// Shown in place of the pill (e.g. "Transcript cancelled · Undo").
+    @Published var notice: OverlayNotice?
+    /// Where content sits in the panel: against the screen edge, growing inward.
+    @Published var alignment: Alignment = .top
+    /// The visible, clickable content in panel coordinates; everything else clicks through.
+    var interactiveRect: CGRect = .zero
 }
 
-/// The "Flow bar": a glowing pill that reacts to your voice, then morphs through
-/// processing -> result, with notes shown as mini-toasts underneath.
+/// The "Flow bar". While listening: [✕] waveform [✓], where ✕ cancels and ✓ finishes. Then
+/// processing -> result, with notes as mini-toasts. Horizontal at the bottom and under the
+/// cursor; upright on the side edges, where text sits beside the pill (never rotated).
 struct FlowOverlay: View {
     @ObservedObject var model: OverlayModel
     @ObservedObject var recorder: RecordingManager
+    let onNoticeAction: () -> Void
+
+    private var isVertical: Bool { model.alignment == .leading || model.alignment == .trailing }
 
     var body: some View {
-        VStack(spacing: 6) {
-            if model.phase != .hidden {
-                pill
-                    .transition(.scale(scale: 0.6, anchor: .top).combined(with: .opacity))
-                ForEach(notes, id: \.self) { note in
-                    Text(note)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(.black.opacity(0.55)))
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+        Group {
+            if let notice = model.notice {
+                OverlayNoticeView(notice: notice, onAction: onNoticeAction)
+                    .id(notice.id)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    .reportFrame(to: model)
+            } else if isVertical {
+                verticalLayout
+            } else {
+                horizontalLayout
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: model.alignment)
+        .padding(OverlayLayout.edgeInset)
         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: model.phase)
-        .allowsHitTesting(false)
+        .animation(.spring(response: 0.38, dampingFraction: 0.72), value: model.notice)
+    }
+
+    private var horizontalLayout: some View {
+        let notesAbove = model.alignment == .bottom
+        return VStack(spacing: 6) {
+            if model.phase != .hidden {
+                if notesAbove { labels(notes, alignment: .center) }
+                pill
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    .reportFrame(to: model)
+                if !notesAbove { labels(notes, alignment: .center) }
+            }
+        }
+    }
+
+    /// Pill hugs the screen edge; status text and notes sit beside it, toward the center.
+    private var verticalLayout: some View {
+        let onLeft = model.alignment == .leading
+        return HStack(spacing: 8) {
+            if model.phase != .hidden {
+                if !onLeft { labels(sideLabels, alignment: .trailing) }
+                pill
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    .reportFrame(to: model)
+                if onLeft { labels(sideLabels, alignment: .leading) }
+            }
+        }
+    }
+
+    private func labels(_ texts: [String], alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 6) {
+            ForEach(texts, id: \.self) { text in
+                Text(text)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(.black.opacity(0.7)))
+                    .transition(.opacity)
+            }
+        }
     }
 
     private var notes: [String] {
@@ -47,68 +93,71 @@ struct FlowOverlay: View {
         return []
     }
 
+    /// In the upright layout the pill has no room for text, so the status moves out too.
+    private var sideLabels: [String] {
+        switch model.phase {
+        case .processing: ["Transcribing…"]
+        case .success(let title, let notes): [title] + notes
+        case .listening, .hidden: []
+        }
+    }
+
+    // MARK: Pill
+
     private var pill: some View {
-        HStack(spacing: 10) {
-            icon
-                .frame(width: 18, height: 18)
-            content
+        let stack = isVertical
+            ? AnyLayout(VStackLayout(spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 10))
+        return stack {
+            switch model.phase {
+            case .listening:
+                circleButton("xmark", help: "Cancel (Esc)", filled: false) {
+                    FlowController.shared.cancel(notify: true)
+                }
+                Waveform(level: recorder.level, axis: isVertical ? .vertical : .horizontal)
+                    .frame(width: isVertical ? 22 : 72, height: isVertical ? 72 : 22)
+                circleButton("checkmark", help: "Finish and paste", filled: true) {
+                    FlowController.shared.finish()
+                }
+            case .processing:
+                ProgressView().controlSize(.small).tint(.white)
+                    .frame(width: 18, height: 18)
+                if !isVertical { label("Transcribing…") }
+            case .success(let title, _):
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    .frame(width: 18, height: 18)
+                if !isVertical { label(title) }
+            case .hidden:
+                EmptyView()
+            }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 40)
+        .padding(model.phase == .listening ? 6 : 11)
+        .padding(isVertical ? .vertical : .horizontal, model.phase == .listening ? 0 : 6)
         .background {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
-            Capsule()
-                .fill(.black.opacity(0.35))
-            Capsule()
-                .strokeBorder(accent.opacity(0.6), lineWidth: 1)
+            Capsule().fill(Color(white: 0.08))
+            Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 1)
         }
         .background {
-            // Glow ring: breathes with the voice level while listening.
+            // Glow: breathes with the voice level while listening.
             Capsule()
                 .fill(accent)
-                .blur(radius: 18)
-                .opacity(model.phase == .listening ? 0.35 + Double(recorder.level) * 0.5 : 0.35)
-                .scaleEffect(model.phase == .listening ? 1.0 + CGFloat(recorder.level) * 0.15 : 1.0)
+                .blur(radius: 14)
+                .opacity(model.phase == .listening ? 0.25 + Double(recorder.level) * 0.5 : 0.3)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6), value: recorder.level)
         }
         .fixedSize()
     }
 
-    @ViewBuilder private var icon: some View {
-        switch model.phase {
-        case .listening:
-            Circle().fill(.red)
-                .frame(width: 9, height: 9)
-                .shadow(color: .red, radius: 4)
-        case .processing:
-            ProgressView().controlSize(.small).tint(.white)
-        case .success:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .error:
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-        case .toast:
-            Image(systemName: "sparkles").foregroundStyle(.cyan)
-        case .hidden:
-            EmptyView()
+    private func circleButton(_ symbol: String, help: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(filled ? .black : .white)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(filled ? .white : .white.opacity(0.22)))
         }
-    }
-
-    @ViewBuilder private var content: some View {
-        switch model.phase {
-        case .listening:
-            Waveform(level: recorder.level)
-                .frame(width: 88, height: 22)
-        case .processing:
-            label("Transcribing…")
-        case .success(let title, _):
-            label(title)
-        case .error(let message), .toast(let message):
-            label(message)
-        case .hidden:
-            EmptyView()
-        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 
     private func label(_ text: String) -> some View {
@@ -124,32 +173,42 @@ struct FlowOverlay: View {
         case .listening: .blue
         case .processing: .purple
         case .success: .green
-        case .error: .orange
-        case .toast: .cyan
         case .hidden: .clear
         }
     }
 }
 
+private extension View {
+    /// Records this view's frame (panel coordinates) as the overlay's clickable area.
+    func reportFrame(to model: OverlayModel) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.interactiveRect = $0 }
+    }
+}
+
 /// Live bars driven by mic level, with a traveling wobble so it never looks static.
-private struct Waveform: View {
+/// Horizontal: vertical bars side by side. Vertical: horizontal bars stacked.
+struct Waveform: View {
     let level: Float
+    let axis: Axis
     private let bars = 11
 
     var body: some View {
         TimelineView(.animation) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: 3) {
+            let layout = axis == .horizontal
+                ? AnyLayout(HStackLayout(alignment: .center, spacing: 3))
+                : AnyLayout(VStackLayout(alignment: .center, spacing: 3))
+            layout {
                 ForEach(0..<bars, id: \.self) { i in
                     let wobble = (sin(t * 9 + Double(i) * 0.8) + 1) / 2
                     let center = 1 - abs(Double(i) - Double(bars - 1) / 2) / Double(bars)
-                    let height = 3 + CGFloat(Double(level) * center * (0.45 + 0.55 * wobble)) * 19
+                    let length = 4 + CGFloat(Double(level) * center * (0.45 + 0.55 * wobble)) * 16
                     Capsule()
-                        .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .top, endPoint: .bottom))
-                        .frame(width: 4, height: height)
+                        .fill(.white)
+                        .frame(width: axis == .horizontal ? 3 : length, height: axis == .horizontal ? length : 3)
                 }
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

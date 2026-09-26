@@ -1,4 +1,4 @@
-"""Nemotron Flow local ASR server.
+"""Fn-flow local ASR server.
 
 Serves NVIDIA Parakeet (via parakeet-mlx) on localhost. The app launches and
 stops this process itself; it can also be run by hand:
@@ -18,9 +18,9 @@ from parakeet_mlx import from_pretrained
 
 DEFAULT_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
 
-app = FastAPI(title="Nemotron Flow Runtime")
+app = FastAPI(title="Fn-flow Runtime")
 _model = None
-_model_name = os.environ.get("NEMOTRON_FLOW_ASR_MODEL", DEFAULT_MODEL)
+_model_name = os.environ.get("FN_FLOW_ASR_MODEL", DEFAULT_MODEL)
 
 
 def get_model():

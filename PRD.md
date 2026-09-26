@@ -1,7 +1,7 @@
-# PRD: Nemotron Flow (Wispr Clone)
+# PRD: Fn-flow (Wispr Clone)
 
 ## 1. Project Overview
-Nemotron Flow is a native macOS application that provides a seamless "voice-to-text anywhere" experience. It mimics the "hold-to-talk" and "release-to-paste" workflow of Wispr Flow, leveraging local AI (Nemotron/Parakeet) for privacy and speed.
+Fn-flow is a native macOS application that provides a seamless "voice-to-text anywhere" experience. It mimics the "hold-to-talk" and "release-to-paste" workflow of Wispr Flow, leveraging local AI (Nemotron/Parakeet) for privacy and speed.
 
 ## 2. Core Value Proposition
 High-fidelity, context-aware dictation that removes filler words, handles self-corrections (backtracking), and integrates fluidly into any macOS text field with high-end animations.

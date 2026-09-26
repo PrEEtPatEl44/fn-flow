@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct NemotronFlowApp: App {
+struct FnFlowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -53,7 +53,7 @@ private struct MenuContent: View {
         Divider()
         Button("Settings…") { SettingsWindowController.shared.show() }
             .keyboardShortcut(",")
-        Button("Quit Nemotron Flow") { NSApp.terminate(nil) }
+        Button("Quit Fn-flow") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
 }
@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         FlowController.shared.setUp()
+        IdlePillController.shared.start()
 
         if !HotkeyManager.shared.start() {
             // No Accessibility yet: ask, and start listening as soon as it's granted.

@@ -4,9 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A macOS menu bar app (Swift 6, SwiftUI, macOS 14+, Apple Silicon): hold a hotkey, speak, release,
-and the text is pasted at the text cursor. Transcription and cleanup run fully locally. Product
-spec: `PRD.md`.
+**Fn-flow**, a macOS menu bar app (Swift 6, SwiftUI, macOS 14+, Apple Silicon): hold a hotkey,
+speak, release, and the text is pasted at the text cursor. Transcription and cleanup run fully
+locally. Product spec: `PRD.md`.
+
+The app was originally called "Nemotron Flow". A few identifiers deliberately keep that name,
+because changing them would reset users' permissions, settings, or installed models:
+- the bundle ID and log subsystem `dev.nemotronflow.app`
+- `~/Library/Application Support/NemotronFlow/`
+- the "Nemotron Flow Local Signing" identity
+
+Don't rename these. "Nemotron" elsewhere means the NVIDIA model, not the app.
 
 ## Commands
 
@@ -15,7 +23,7 @@ swift build                                   # debug build
 swift test                                    # unit tests (Swift Testing)
 swift test --filter TextCleanerTests          # one suite
 swift test --filter "CorrectionDiffTests/learnsMisheardName"  # one test
-NEMOTRON_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # e2e; needs runtime up
+FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # e2e; needs runtime up
 scripts/build_app.sh [--run|--install]        # signed .app in build/ (required for real use)
 runtime/install_runtime.sh                    # install/repair local models (~5 GB, idempotent)
 /usr/bin/log stream --predicate 'subsystem == "dev.nemotronflow.app"'   # app logs
