@@ -30,6 +30,7 @@ private struct MenuContent: View {
     @ObservedObject private var flow = FlowController.shared
     @ObservedObject private var runtime = RuntimeManager.shared
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var history = DictationHistory.shared
 
     var body: some View {
         Text("Hold \(settings.hotkey.displayName) to dictate")
@@ -37,10 +38,10 @@ private struct MenuContent: View {
         Text("Nemotron cleanup: \(settings.refineWithLLM ? runtime.llmStatus.label : "Off")")
         Divider()
         Button("Copy Last Transcript") { flow.copyLastTranscript() }
-            .disabled(flow.history.isEmpty)
-        if !flow.history.isEmpty {
+            .disabled(history.entries.isEmpty)
+        if !history.entries.isEmpty {
             Menu("Recent") {
-                ForEach(Array(flow.history.enumerated()), id: \.offset) { _, item in
+                ForEach(history.entries.prefix(10)) { item in
                     Button(item.text.count > 60 ? item.text.prefix(60) + "…" : item.text) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(item.text, forType: .string)
@@ -48,6 +49,7 @@ private struct MenuContent: View {
                 }
             }
         }
+        Button("History…") { SettingsWindowController.shared.show(tab: .history) }
         Divider()
         Button("Settings…") { SettingsWindowController.shared.show() }
             .keyboardShortcut(",")

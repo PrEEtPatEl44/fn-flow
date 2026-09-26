@@ -9,7 +9,6 @@ final class FlowController: ObservableObject {
     enum Phase { case idle, listening, processing }
 
     @Published private(set) var phase: Phase = .idle
-    @Published private(set) var history: [DictationResult] = []
 
     private let overlay = OverlayWindowManager.shared
     private let minimumDuration: TimeInterval = 0.3
@@ -70,16 +69,15 @@ final class FlowController: ObservableObject {
         overlay.show(.processing)
         // Remember where the text is going so later edits there can be learned from.
         let target = AccessibilityManager.shared.focusedElement()
+        let targetApp = NSWorkspace.shared.frontmostApplication?.localizedName
 
         Task {
             defer { phase = .idle }
             do {
                 let result = try await AIBridge.shared.process(audioURL: recording.url)
                 log.notice("Transcribed: \(result.raw, privacy: .private) -> \(result.text, privacy: .private)")
-                history.insert(result, at: 0)
-                if history.count > 20 { history.removeLast() }
-
                 let settings = AppSettings.shared
+                DictationHistory.shared.add(result, app: targetApp, pasted: settings.outputMode == .pasteAtCursor)
                 AccessibilityManager.shared.deliver(result.text, mode: settings.outputMode, restoreClipboard: settings.restoreClipboard)
                 log.notice("Delivered \(result.text.count) chars via \(settings.outputMode.rawValue, privacy: .public), AX trusted: \(AccessibilityManager.shared.isTrusted)")
                 let title = settings.outputMode == .pasteAtCursor ? "Pasted" : "Copied to clipboard"
@@ -104,7 +102,7 @@ final class FlowController: ObservableObject {
     }
 
     func copyLastTranscript() {
-        guard let last = history.first else { return }
+        guard let last = DictationHistory.shared.entries.first else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(last.text, forType: .string)
     }
