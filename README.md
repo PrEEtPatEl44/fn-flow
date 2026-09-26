@@ -11,27 +11,26 @@ scripts/build_app.sh --install   # builds, signs, copies to ~/Applications, laun
 
 On first launch:
 
-1. **Models** tab → **Install Models** (≈5 GB, one time). This runs
-   `runtime/install_runtime.sh` and sets up the following in
-   `~/Library/Application Support/NemotronFlow/runtime`:
-   - uv + Python 3.12 venv with `parakeet-mlx` → NVIDIA **Parakeet TDT 0.6B** ASR
-   - Ollama `nemotron-mini` → NVIDIA **Nemotron** cleanup
-2. **Permissions** tab → grant **Accessibility** (hotkey + paste) and **Microphone**.
-3. Hold **Right ⌥** (default), speak, release. Press **Esc** while holding to cancel.
+1. **Models** tab → **Download** the speech model (NVIDIA **Parakeet TDT 0.6B**, ~450 MB,
+   one time). It runs inside the app on Apple's Neural Engine; nothing else to install.
+2. Optional: install [Ollama](https://ollama.com/download), then **Download** NVIDIA
+   **Nemotron** in the same tab for smarter cleanup. Without it, built-in rules still remove
+   fillers and apply corrections.
+3. **Permissions** tab → grant **Accessibility** (hotkey + paste) and **Microphone**.
+4. Hold **Right ⌥** (default), speak, release. Press **Esc** while holding to cancel.
 
 ## Pipeline
 
 ```
 hotkey down → record live 16 kHz audio → overlay
-while speaking → every few seconds: Parakeet (local server, :8765) → Nemotron (Ollama)
+while speaking → every few seconds: Parakeet (in-process, Neural Engine) → Nemotron (Ollama)
 hotkey up   → finish only the last few seconds → personal dictionary
             → paste at the cursor and/or copy → watch for manual corrections
 ```
 
-- **Streaming:** transcription and cleanup happen *while you speak*, so the wait after
-  release stays about 0.2 s no matter how long you talk. Before this, a 50-second dictation
-  took about 7 s.
-
+- **Streaming:** transcription and cleanup happen *while you speak*, so the text is ready
+  about 0.05 s after release, however long you talk. (Before streaming, a 50-second
+  dictation took about 7 s.)
 - **Nemotron cleanup** removes fillers, applies self-corrections ("actually no",
   "scratch that"), and fixes punctuation and lists. If the LLM's output isn't built from
   the words you said (e.g. it tries to *answer* a question), it's discarded in favor of
@@ -39,7 +38,6 @@ hotkey up   → finish only the last few seconds → personal dictionary
 - **Personal dictionary** (Settings → Dictionary): terms steer the prompt; replacements
   are applied to every dictation. If you fix a misheard word right after pasting
   ("cooper netties" → "Kubernetes"), the fix is learned automatically.
-- The app launches and stops the ASR server itself; its log is `runtime/server.log`.
 
 ## Settings
 
@@ -54,7 +52,7 @@ hotkey up   → finish only the last few seconds → personal dictionary
 
 ```bash
 swift build && swift test
-FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # needs the runtime running
+FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # downloads the speech model on first run
 ```
 
 **Benchmark.** A latency and quality benchmark runs the original and the streaming pipeline

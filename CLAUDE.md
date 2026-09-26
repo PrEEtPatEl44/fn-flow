@@ -23,11 +23,10 @@ swift build                                   # debug build
 swift test                                    # unit tests (Swift Testing)
 swift test --filter TextCleanerTests          # one suite
 swift test --filter "CorrectionDiffTests/learnsMisheardName"  # one test
-FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # e2e; needs runtime up
+FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # e2e; downloads the speech model on first run
 FN_FLOW_BENCH=1 FN_FLOW_BENCH_LABEL=x swift test --filter BenchmarkTests  # latency + quality benchmark
 python3 bench/compare.py x-baseline x-optimized                           # compare its two variants
 scripts/build_app.sh [--run|--install]        # signed .app in build/ (required for real use)
-runtime/install_runtime.sh                    # install/repair local models (~5 GB, idempotent)
 /usr/bin/log stream --predicate 'subsystem == "dev.nemotronflow.app"'   # app logs
 ```
 
@@ -51,8 +50,8 @@ The flow is two processes, plus Ollama:
 ```
 HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngine, live 16 kHz)
   → StreamingDictation, while the user speaks:
-      every few seconds: POST localhost:8765/transcribe (runtime/server.py, Parakeet via
-      parakeet-mlx, with word timings) → commit stable words → AIBridge.cleanChunk
+      every few seconds: SpeechEngine (in-process Parakeet v2, Core ML on the Neural Engine
+      via FluidAudio, with word timings) → commit stable words → AIBridge.cleanChunk
       (Ollama /api/chat, nemotron-mini, or rules)
   → at release: transcribe + clean only the leftover → AIBridge.finalize (format, dictionary)
   → AccessibilityManager.deliver (⌘V and/or clipboard) → CorrectionTracker (learns edits)
@@ -74,11 +73,14 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngi
     `StreamingTests` uses fakes.
   - `RecordingManager` hands audio over through a locked `SampleBuffer`, and `stop()` drains
     it after stopping the engine, so the last batch always lands in the stream and the WAV.
-- **Parakeet occasionally emits a run of `<unk>` tokens** (a degenerate decode; the same
-  audio transcribes fine moments later). It hasn't been reproduced on demand. The server
-  retries once, strips what's left, and reports `unk_tokens`; streaming won't commit such a
-  window. The offending audio is kept in `runtime/diagnostics/` (newest 10) under
-  `~/Library/Application Support/NemotronFlow/`: use it to find the root cause.
+- **Parakeet occasionally emits a run of `<unk>` tokens** (a degenerate decode, seen with the
+  earlier MLX runtime; the same audio transcribed fine moments later). It hasn't been
+  reproduced on demand. `SpeechEngine` retries once, strips what's left, and reports
+  `unknownTokens`; streaming won't commit such a window. The offending audio is kept in
+  `~/Library/Application Support/NemotronFlow/diagnostics/` (newest 10): use it to find the
+  root cause.
+- **`SpeechEngine` pads audio with 0.5 s of silence.** Without it, Parakeet can invent words
+  when speech is cut off abruptly ("…instead of just" → "…adjusting the majority").
   - `AIBridge.process(audioURL:)` is the whole-file path (Undo, and the fallback if
     streaming fails). Both paths share `cleanChunk` and `finalize`.
 - **Nemotron generation (~35–45 tokens/s on this M5 Air) is the hard limit**, and Ollama
@@ -88,12 +90,18 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngi
 
 - **`FlowController`** is the state machine (idle → listening → processing) and the only place
   that wires the managers together. Most other types are `@MainActor` singletons (`.shared`).
-- **`RuntimeManager`** owns the local AI runtime. It runs `install_runtime.sh`, launches
-  `server.py` as a child process (and kills it on quit), and starts Ollama if needed. The runtime
-  lives in `~/Library/Application Support/NemotronFlow/runtime/`, which also holds `server.log`
-  and the `asr_model` marker file. It copies the bundled `server.py` over the installed one on
-  every start, so edits to `runtime/server.py` ship with the app. Bundled scripts are found in
-  the .app's `Resources/`, with a `#filePath` fallback to the repo `runtime/` directory.
+- **`ModelManager`** owns the models, all managed inside the app (#6; modeled on how Handy
+  provides models). No bash, Python, or Homebrew:
+  - Speech: Parakeet v2 Core ML (~450 MB) downloaded from Hugging Face by FluidAudio into
+    `…/NemotronFlow/models/parakeet-tdt-0.6b-v2`, with live progress, then loaded by
+    `SpeechEngine`. FluidAudio treats the given folder's *parent* as the models directory
+    and uses its own folder name, so keep `speechModelDirectory` matching that name. An
+    existing FluidAudio cache is reused.
+  - Cleanup: Nemotron through Ollama is **optional** and never installed by the app; if Ollama
+    is present, the model is pulled through its API (`/api/pull`, streamed progress).
+    Without it, dictation uses the rule-based cleanup.
+  - The pre-#6 Python runtime folder (`…/NemotronFlow/runtime/`, ~5 GB) is no longer used and
+    never deleted automatically; Settings › Models offers to remove it.
 - **The LLM is a cleanup stage, not an assistant, and its output is untrusted.** Left
   unconstrained, `nemotron-mini` answers, summarizes or outlines dictated instructions ("we
   need to add…"). Three layers stop that:
@@ -106,8 +114,6 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngi
   Formatting (bullets, question marks) is deliberately **not** in the prompt:
   `TextCleaner.format` does it deterministically afterwards. Keep few-shot example topics
   unrelated to real dictation, or the model copies them into the output.
-- **`runtime/server.py` `/transcribe` must stay `async def`.** MLX streams are thread-local, and
-  FastAPI runs sync endpoints in a threadpool, which fails with "There is no Stream(cpu, 1)".
 - **Correction learning** (`CorrectionTracker` / `CorrectionDiff`): after a paste, it polls the
   focused `AXUIElement`'s value and learns word substitutions only if they "sound alike"
   (phonetic key + edit distance). This keeps content edits like Tuesday → Wednesday out of the
