@@ -16,14 +16,21 @@ import Foundation
 ///
 /// Cleanup runs speculatively on committed text, a few clauses at a time. If later text
 /// starts with a correction ("Actually no, …"), the previous chunk is cleaned again
-/// together with it. Speech-to-text and cleanup each run in their own ordered queue, and
-/// the two overlap.
+/// together with it.
+///
+/// Speech-to-text and cleanup each have one worker, and the two overlap. Pending cuts are
+/// coalesced, so if transcription falls behind, the backlog becomes a single larger window
+/// rather than a queue that `finish()` must wait through. After release, cleanup gets
+/// `releaseCleanupBudget`; past it, Nemotron is cancelled and the rules finish the job.
 @MainActor
 final class StreamingDictation {
+    typealias Transcriber = @MainActor (Data) async throws -> Transcription
+    typealias Cleaner = @MainActor (String) async -> (text: String, usedLLM: Bool)
+
     /// Everything recorded so far (16 kHz mono), e.g. to save the recording for Undo.
     private(set) var samples: [Int16] = []
 
-    /// Background work so far: windows transcribed and chunks cleaned while recording.
+    /// Background work so far: windows transcribed and chunks cleaned.
     private(set) var segmentsTranscribed = 0
     private(set) var chunksCleaned = 0
 
@@ -36,10 +43,14 @@ final class StreamingDictation {
     private let maxUncommitted: TimeInterval = 6
     /// Don't send tiny pieces to cleanup while more speech is coming.
     private let minChunkWords = 10
+    /// How long the user waits for Nemotron after release before the rules take over.
+    private let releaseCleanupBudget: Duration
     /// Transcribe at the next pause after 1.5 s of new audio, or every 3 s regardless:
     /// commits only keep words with speech after them, so windows needn't end at pauses.
     private let segmenter = PauseSegmenter(minSegment: 1.5, minPause: 0.2, maxSegment: 3)
     private let sampleRate = Double(PauseSegmenter.sampleRate)
+    private let transcriber: Transcriber
+    private let cleaner: Cleaner
 
     /// Where the segmenter looks for the next pause.
     private var segmentStart = 0
@@ -50,10 +61,23 @@ final class StreamingDictation {
     /// Committed text not yet sent to cleanup.
     private var pending = ""
     private var parts: [Part] = []
-    private var asrQueue: Task<Void, Never>?
-    private var cleanupQueue: Task<Void, Never>?
     private var failure: Error?
     private var cancelled = false
+
+    // Speech-to-text worker: transcribes up to the latest requested end.
+    private var requestedEnd = 0
+    private var transcribedEnd = 0
+    private var finalRequested = false
+    private var finalDone = false
+    private var asrWorker: Task<Void, Never>?
+    private var asrRequest: Task<Transcription, Error>?
+
+    // Cleanup worker: cleans queued chunks in order.
+    private var cleanupQueue: [(chunk: String, withPrevious: Bool)] = []
+    private var cleanupWorker: Task<Void, Never>?
+    private var cleanupRequest: Task<(text: String, usedLLM: Bool), Never>?
+    /// After release, once the budget runs out: the rules clean what's left.
+    private var rulesOnly = false
 
     private struct Part {
         var raw: String
@@ -61,14 +85,26 @@ final class StreamingDictation {
         var usedLLM: Bool
     }
 
+    init(
+        releaseCleanupBudget: Duration = .milliseconds(1500),
+        transcriber: @escaping Transcriber = { try await AIBridge.shared.transcription(wav: $0) },
+        cleaner: @escaping Cleaner = { await AIBridge.shared.cleanChunk($0) }
+    ) {
+        self.releaseCleanupBudget = releaseCleanupBudget
+        self.transcriber = transcriber
+        self.cleaner = cleaner
+    }
+
     /// Feed newly recorded audio. Transcribes in the background at each pause.
     func append(_ newSamples: [Int16]) {
         guard !cancelled else { return }
         samples.append(contentsOf: newSamples)
-        while let cut = segmenter.cutPoint(in: samples, from: segmentStart) {
-            transcribeWindow(until: cut, final: false)
-            segmentStart = cut
+        var cut: Int?
+        while let next = segmenter.cutPoint(in: samples, from: segmentStart) {
+            cut = next
+            segmentStart = next
         }
+        if let cut { requestTranscription(until: cut, final: false) }
     }
 
     /// The user finished: process what's left and return the result. The timings cover only
@@ -77,13 +113,24 @@ final class StreamingDictation {
         let clock = ContinuousClock()
         let start = clock.now
         segmentStart = samples.count
-        transcribeWindow(until: samples.count, final: true)
-        await asrQueue?.value
+        requestTranscription(until: samples.count, final: true)
+        while let worker = asrWorker { await worker.value }
         let transcribed = clock.now
         if let failure { throw failure }
 
         scheduleCleanup(final: true)
-        await cleanupQueue?.value
+        // Don't let a slow or busy Nemotron hold the paste: past the budget, cancel it and
+        // let the rules clean whatever is left.
+        let budget = releaseCleanupBudget
+        let deadline = Task { [weak self] in
+            try? await Task.sleep(for: budget)
+            guard let self, !Task.isCancelled else { return }
+            rulesOnly = true
+            cleanupRequest?.cancel()
+        }
+        while let worker = cleanupWorker { await worker.value }
+        deadline.cancel()
+
         guard !TextCleaner.words(transcript).isEmpty else { throw FlowError.nothingHeard }
         return try AIBridge.shared.finalize(
             raw: transcript,
@@ -95,35 +142,60 @@ final class StreamingDictation {
         )
     }
 
+    /// Stops all work, including requests already in flight, so the next dictation doesn't
+    /// queue behind this one.
     func cancel() {
         cancelled = true
-        asrQueue?.cancel()
-        cleanupQueue?.cancel()
+        asrRequest?.cancel()
+        cleanupRequest?.cancel()
+        asrWorker?.cancel()
+        cleanupWorker?.cancel()
     }
 
-    // MARK: Speech-to-text queue
+    // MARK: Speech-to-text worker
 
-    /// Transcribes the audio from the last committed point up to `end`. The window's start
-    /// is read when the job runs, after earlier windows have committed.
-    private func transcribeWindow(until end: Int, final: Bool) {
-        let previous = asrQueue
-        asrQueue = Task { [weak self] in
-            await previous?.value
-            guard let self, !cancelled, failure == nil else { return }
-            let start = committedUntil
-            guard end > start else { return }
-            let window = samples[start..<end]
-            guard PauseSegmenter.containsSpeech(window) else {
-                if final || Double(end - start) / sampleRate > maxUncommitted { committedUntil = end }
-                return
-            }
-            do {
-                let result = try await AIBridge.shared.transcription(wav: WAV.encode(window))
-                segmentsTranscribed += 1
-                commit(result, windowStart: start, windowEnd: end, final: final)
-            } catch {
-                failure = error
-            }
+    private func requestTranscription(until end: Int, final: Bool) {
+        requestedEnd = max(requestedEnd, end)
+        if final { finalRequested = true }
+        if asrWorker == nil {
+            asrWorker = Task { [weak self] in await self?.runTranscription() }
+        }
+    }
+
+    /// Transcribes up to the latest requested end, one window at a time. Cuts requested
+    /// while a window is in flight collapse into the next window.
+    private func runTranscription() async {
+        while !cancelled, failure == nil {
+            let end = requestedEnd
+            let isFinal = finalRequested && end == requestedEnd
+            guard end > transcribedEnd || (isFinal && !finalDone) else { break }
+            transcribedEnd = end
+            await transcribeWindow(until: end, final: isFinal)
+            if isFinal, end == requestedEnd { finalDone = true }
+        }
+        asrWorker = nil
+    }
+
+    private func transcribeWindow(until end: Int, final: Bool) async {
+        let start = committedUntil
+        guard end > start else { return }
+        let window = samples[start..<end]
+        guard PauseSegmenter.containsSpeech(window) else {
+            if final || Double(end - start) / sampleRate > maxUncommitted { committedUntil = end }
+            return
+        }
+        let wav = WAV.encode(window)
+        let transcriber = transcriber
+        let request = Task { try await transcriber(wav) }
+        asrRequest = request
+        defer { asrRequest = nil }
+        do {
+            let result = try await request.value
+            guard !cancelled else { return }
+            segmentsTranscribed += 1
+            commit(result, windowStart: start, windowEnd: end, final: final)
+        } catch {
+            if !cancelled { failure = error }
         }
     }
 
@@ -163,7 +235,7 @@ final class StreamingDictation {
         scheduleCleanup(final: false)
     }
 
-    // MARK: Cleanup queue
+    // MARK: Cleanup worker
 
     /// Cleans committed text right away (speculatively). A chunk that opens with a
     /// correction is cleaned together with the chunk before it, replacing that result.
@@ -172,22 +244,35 @@ final class StreamingDictation {
         let text = pending
         pending = ""
         for chunk in TextCleaner.chunks(text) {
-            cleanChunk(chunk, withPrevious: TextCleaner.startsWithCorrection(chunk))
+            cleanupQueue.append((chunk, TextCleaner.startsWithCorrection(chunk)))
+        }
+        if cleanupWorker == nil, !cleanupQueue.isEmpty {
+            cleanupWorker = Task { [weak self] in await self?.runCleanup() }
         }
     }
 
-    private func cleanChunk(_ chunk: String, withPrevious: Bool) {
-        let previous = cleanupQueue
-        cleanupQueue = Task { [weak self] in
-            await previous?.value
-            guard let self, !cancelled else { return }
-            var raw = chunk
-            if withPrevious, let last = parts.popLast() {
-                raw = last.raw.trimmingCharacters(in: .whitespaces) + " " + chunk
+    private func runCleanup() async {
+        while !cancelled, !cleanupQueue.isEmpty {
+            let item = cleanupQueue.removeFirst()
+            var raw = item.chunk
+            if item.withPrevious, let last = parts.popLast() {
+                raw = last.raw.trimmingCharacters(in: .whitespaces) + " " + item.chunk
             }
-            let (text, usedLLM) = await AIBridge.shared.cleanChunk(raw)
-            parts.append(Part(raw: raw, cleaned: text, usedLLM: usedLLM))
+            let cleaned: (text: String, usedLLM: Bool)
+            if rulesOnly {
+                cleaned = (TextCleaner.clean(TextCleaner.applyMidSentenceBacktracking(raw)), false)
+            } else {
+                let cleaner = cleaner
+                let chunk = raw
+                let request = Task { await cleaner(chunk) }
+                cleanupRequest = request
+                cleaned = await request.value
+                cleanupRequest = nil
+            }
+            guard !cancelled else { break }
+            parts.append(Part(raw: raw, cleaned: cleaned.text, usedLLM: cleaned.usedLLM))
             chunksCleaned += 1
         }
+        cleanupWorker = nil
     }
 }

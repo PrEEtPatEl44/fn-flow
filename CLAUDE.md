@@ -67,6 +67,13 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngi
     window. Keep this rule if you change the windowing.
   - Cleanup is **speculative**: a chunk starting with a correction ("Scratch that, …")
     re-cleans the previous chunk together with it.
+  - Speech-to-text and cleanup each have **one worker**. Pending cuts coalesce into the
+    latest end point, so a backlog becomes one bigger window rather than a queue. After
+    release, cleanup gets a 1.5 s budget, then Nemotron is cancelled and the rules finish.
+    `cancel()` cancels in-flight requests too. Backends are injectable, and
+    `StreamingTests` uses fakes.
+  - `RecordingManager` hands audio over through a locked `SampleBuffer`, and `stop()` drains
+    it after stopping the engine, so the last batch always lands in the stream and the WAV.
   - `AIBridge.process(audioURL:)` is the whole-file path (Undo, and the fallback if
     streaming fails). Both paths share `cleanChunk` and `finalize`.
 - **Nemotron generation (~35–45 tokens/s on this M5 Air) is the hard limit**, and Ollama

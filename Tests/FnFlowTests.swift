@@ -411,7 +411,102 @@ struct ChunkingTests {
     }
 }
 
+/// Serialized: several tests measure timing and share the main actor.
+@Suite(.serialized)
 struct StreamingTests {
+    /// 16 kHz "speech" (a square wave) the segmenter treats as voice.
+    static func speech(seconds: Double) -> [Int16] {
+        (0..<Int(seconds * 16_000)).map { Int16(truncatingIfNeeded: ($0 % 40 < 20) ? 8_000 : -8_000) }
+    }
+
+    /// Review on #9: a batch captured just before stop() must reach both the stream and the WAV.
+    @MainActor
+    @Test func stopDeliversAudioStillQueued() throws {
+        let recorder = RecordingManager.shared
+        let buffer = SampleBuffer()
+        var delivered: [Int16] = []
+        recorder.attach(buffer) { delivered += $0 }
+        buffer.append([1, 2, 3], level: 0.5)
+        recorder.drain()
+        // The final batch arrives from the audio thread, and its drain hasn't run yet.
+        let final: [Int16] = [4, 5, 6, 7]
+        let appended = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async { buffer.append(final, level: 0.5); appended.signal() }
+        appended.wait()
+        let recording = try #require(recorder.stop())
+        #expect(delivered == [1, 2, 3, 4, 5, 6, 7])
+        #expect(WAV.decode(try Data(contentsOf: recording.url)) == [1, 2, 3, 4, 5, 6, 7])
+        #expect(!recorder.isRecording)
+    }
+
+    /// Review on #9: cuts requested while transcription is busy collapse into one window.
+    @MainActor
+    @Test func pendingCutsAreCoalesced() async throws {
+        var calls = 0
+        let dictation = StreamingDictation(
+            transcriber: { _ in
+                calls += 1
+                try await Task.sleep(for: .milliseconds(300))
+                return Transcription(text: "word", sentences: nil, words: nil)
+            },
+            cleaner: { ($0, false) }
+        )
+        // 30 s of speech arrives far faster than it can be transcribed: ~10 cuts.
+        let audio = Self.speech(seconds: 30)
+        for offset in stride(from: 0, to: audio.count, by: 1_600) {
+            dictation.append(Array(audio[offset..<min(offset + 1_600, audio.count)]))
+        }
+        let started = ContinuousClock.now
+        _ = try await dictation.finish()
+        // One window already in flight + one coalesced window + the final one.
+        #expect(calls <= 3)
+        #expect(ContinuousClock.now - started < .seconds(2))
+    }
+
+    /// Review on #9: cancelling stops the request already in flight, not just queued ones.
+    @MainActor
+    @Test func cancelStopsTheInFlightRequest() async throws {
+        var sawCancellation = false
+        var started = false
+        let dictation = StreamingDictation(
+            transcriber: { _ in
+                started = true
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                } catch {
+                    sawCancellation = true
+                    throw error
+                }
+                return Transcription(text: "late", sentences: nil, words: nil)
+            },
+            cleaner: { ($0, false) }
+        )
+        dictation.append(Self.speech(seconds: 4)) // enough for a cut
+        while !started { try await Task.sleep(for: .milliseconds(10)) }
+        dictation.cancel()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(sawCancellation)
+    }
+
+    /// A busy Nemotron can't hold the paste: past the budget, the rules finish the job.
+    @MainActor
+    @Test func slowCleanupFallsBackToRulesAfterRelease() async throws {
+        let dictation = StreamingDictation(
+            releaseCleanupBudget: .milliseconds(200),
+            transcriber: { _ in Transcription(text: "Um, send it on Friday.", sentences: nil, words: nil) },
+            cleaner: { chunk in
+                try? await Task.sleep(for: .seconds(3))
+                return Task.isCancelled ? (TextCleaner.clean(chunk), false) : ("slow", true)
+            }
+        )
+        dictation.append(Self.speech(seconds: 1))
+        let started = ContinuousClock.now
+        let result = try await dictation.finish()
+        #expect(ContinuousClock.now - started < .seconds(1))
+        #expect(result.engine == .rules)
+        #expect(result.text == "Send it on Friday.")
+    }
+
     @Test func segmenterCutsAtPauses() {
         // 5 s of "speech", a 0.3 s pause, then 2 s more.
         let tone = (0..<80_000).map { Int16(truncatingIfNeeded: ($0 % 40 < 20) ? 8_000 : -8_000) }
