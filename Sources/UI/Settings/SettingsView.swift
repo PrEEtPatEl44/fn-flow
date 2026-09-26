@@ -83,12 +83,15 @@ private struct GeneralSettings: View {
                         .foregroundStyle(.orange)
                 }
             }
-            Section("Output") {
-                Picker("After dictation", selection: $settings.outputMode) {
-                    ForEach(OutputMode.allCases) { Text($0.label).tag($0) }
-                }
-                Toggle("Restore my previous clipboard after pasting", isOn: $settings.restoreClipboard)
-                    .disabled(settings.outputMode == .clipboardOnly)
+            Section("After dictation") {
+                // At least one stays on: the only enabled toggle can't be switched off.
+                Toggle("Paste at the cursor", isOn: $settings.pasteAtCursor)
+                    .disabled(settings.pasteAtCursor && !settings.copyToClipboard)
+                Toggle("Copy to the clipboard", isOn: $settings.copyToClipboard)
+                    .disabled(settings.copyToClipboard && !settings.pasteAtCursor)
+                Text(outputSummary)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Section("Overlay") {
                 Picker("Position", selection: $settings.overlayPlacement) {
@@ -149,6 +152,16 @@ private struct HotkeyRecorder: View {
     private func stop() {
         HotkeyManager.shared.endCapture()
         isRecording = false
+    }
+}
+
+private extension GeneralSettings {
+    var outputSummary: String {
+        switch (settings.pasteAtCursor, settings.copyToClipboard) {
+        case (true, true): "Text is pasted where your cursor is and stays on the clipboard."
+        case (true, false): "Text is pasted where your cursor is; your previous clipboard is restored."
+        default: "Text is only copied; paste it yourself with ⌘V."
+        }
     }
 }
 

@@ -41,7 +41,7 @@ hotkey up   → Parakeet (local server, :8765) → Nemotron (Ollama) → persona
 | Setting | Options |
 | --- | --- |
 | Hotkey | Any lone modifier (Right ⌥/⌘/⌃/⇧, Fn), an F-key, or a modifier combo |
-| Output | Paste at cursor (optionally restore the clipboard afterwards) · clipboard only |
+| After dictation | Paste at the cursor and/or copy to the clipboard (at least one on; paste-only restores your previous clipboard) |
 | Overlay | Follow mouse cursor · bottom center |
 | Cleanup | Toggle Nemotron, choose the Ollama model |
 

@@ -37,11 +37,11 @@ final class AccessibilityManager {
         return value as? String
     }
 
-    /// Puts `text` on the clipboard and, in paste mode, sends ⌘V to the focused app.
-    /// When `restoreClipboard` is set, the previous clipboard contents come back afterwards.
-    func deliver(_ text: String, mode: OutputMode, restoreClipboard: Bool) {
+    /// Pastes `text` at the focused app's cursor (via ⌘V) and/or leaves it on the clipboard.
+    /// Pasting without copying restores the previous clipboard contents afterwards.
+    func deliver(_ text: String, paste: Bool, copy: Bool) {
         let pasteboard = NSPasteboard.general
-        let shouldRestore = mode == .pasteAtCursor && restoreClipboard
+        let shouldRestore = paste && !copy
         let saved = shouldRestore ? snapshot(pasteboard) : []
 
         pasteboard.clearContents()
@@ -50,7 +50,7 @@ final class AccessibilityManager {
             // Ask clipboard managers to ignore this temporary entry.
             pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
         }
-        guard mode == .pasteAtCursor else { return }
+        guard paste else { return }
 
         sendPasteShortcut()
 

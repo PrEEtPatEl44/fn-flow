@@ -77,13 +77,18 @@ final class FlowController: ObservableObject {
                 let result = try await AIBridge.shared.process(audioURL: recording.url)
                 log.notice("Transcribed: \(result.raw, privacy: .private) -> \(result.text, privacy: .private)")
                 let settings = AppSettings.shared
-                DictationHistory.shared.add(result, app: targetApp, pasted: settings.outputMode == .pasteAtCursor)
-                AccessibilityManager.shared.deliver(result.text, mode: settings.outputMode, restoreClipboard: settings.restoreClipboard)
-                log.notice("Delivered \(result.text.count) chars via \(settings.outputMode.rawValue, privacy: .public), AX trusted: \(AccessibilityManager.shared.isTrusted)")
-                let title = settings.outputMode == .pasteAtCursor ? "Pasted" : "Copied to clipboard"
+                let (paste, copy) = (settings.pasteAtCursor, settings.copyToClipboard)
+                DictationHistory.shared.add(result, app: targetApp, pasted: paste)
+                AccessibilityManager.shared.deliver(result.text, paste: paste, copy: copy)
+                log.notice("Delivered \(result.text.count) chars (paste: \(paste), copy: \(copy)), AX trusted: \(AccessibilityManager.shared.isTrusted)")
+                let title = switch (paste, copy) {
+                case (true, true): "Pasted & copied"
+                case (true, false): "Pasted"
+                default: "Copied to clipboard"
+                }
                 overlay.show(.success(title: title, notes: result.notes))
                 overlay.hide(after: result.notes.isEmpty ? 0.9 : 2.2)
-                if settings.outputMode == .pasteAtCursor {
+                if paste {
                     CorrectionTracker.shared.track(pasted: result.text, in: target)
                 }
             } catch {

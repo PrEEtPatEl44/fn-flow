@@ -235,3 +235,38 @@ struct PipelineIntegrationTests {
         #expect(!result.text.lowercased().contains("sorry"))
     }
 }
+
+@MainActor
+struct OutputSettingsTests {
+    @Test func pasteAndCopyCannotBothBeOff() {
+        let settings = AppSettings.shared
+        let saved = (settings.pasteAtCursor, settings.copyToClipboard)
+        defer { settings.pasteAtCursor = true; settings.copyToClipboard = saved.1; settings.pasteAtCursor = saved.0 }
+
+        settings.pasteAtCursor = true
+        settings.copyToClipboard = false
+        settings.pasteAtCursor = false // the last one on: ignored
+        #expect(settings.pasteAtCursor)
+
+        settings.copyToClipboard = true
+        settings.pasteAtCursor = false // fine, copy is still on
+        #expect(!settings.pasteAtCursor && settings.copyToClipboard)
+        settings.copyToClipboard = false // the last one on: ignored
+        #expect(settings.copyToClipboard)
+    }
+
+    @Test func migratesTheOldSingleOutputMode() throws {
+        func migrated(_ old: [String: Any]) throws -> (Bool, Bool) {
+            let suite = "nemotron-flow-tests-\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            old.forEach { defaults.set($1, forKey: $0) }
+            AppSettings.migrateOutputMode(defaults)
+            #expect(defaults.object(forKey: "outputMode") == nil)
+            return (defaults.bool(forKey: "pasteAtCursor"), defaults.bool(forKey: "copyToClipboard"))
+        }
+        #expect(try migrated(["outputMode": "clipboardOnly"]) == (false, true))
+        #expect(try migrated(["outputMode": "pasteAtCursor", "restoreClipboard": true]) == (true, false))
+        #expect(try migrated(["outputMode": "pasteAtCursor", "restoreClipboard": false]) == (true, true))
+    }
+}
