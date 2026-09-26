@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Nemotron Flow</string>
+    <key>CFBundleDisplayName</key>
+    <string>Nemotron Flow</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.nemotronflow.app</string>
+    <key>CFBundleExecutable</key>
+    <string>NemotronFlow</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Nemotron Flow listens while you hold the dictation hotkey. Audio is transcribed locally and never leaves your Mac.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Nemotron Flow pastes your dictation into the app you are typing in.</string>
+</dict>
+</plist>
