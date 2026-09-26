@@ -507,6 +507,34 @@ struct StreamingTests {
         #expect(result.text == "Send it on Friday.")
     }
 
+    @Test func unknownTokensAreStripped() {
+        #expect(TextCleaner.stripUnknownTokens("Uh hey, <unk><unk><unk> how are you<unk>?") == "Uh hey, how are you?")
+        #expect(TextCleaner.stripUnknownTokens("<unk> <unk>") == "")
+        #expect(TextCleaner.stripUnknownTokens("Nothing to strip.") == "Nothing to strip.")
+    }
+
+    @MainActor
+    @Test func unknownTokensNeverReachTheOutput() throws {
+        let result = try AIBridge.shared.finalize(
+            raw: "Uh hey, <unk><unk> how are you?", cleaned: "Hey, <unk><unk> how are you?",
+            engine: .rules, transcriptionTime: 0, cleanupTime: 0
+        )
+        #expect(!result.text.contains("<unk>") && !result.raw.contains("<unk>"))
+        #expect(result.text.contains("how are you"))
+        // A transcript that was nothing but <unk> pastes nothing.
+        #expect(throws: FlowError.self) {
+            try AIBridge.shared.finalize(raw: "<unk><unk>", cleaned: "<unk><unk>", engine: .rules, transcriptionTime: 0, cleanupTime: 0)
+        }
+    }
+
+    @Test func decodesUnknownTokenCount() throws {
+        let json = #"{"text":"hey","sentences":[],"words":[],"unk_tokens":4}"#
+        let t = try JSONDecoder().decode(Transcription.self, from: Data(json.utf8))
+        #expect(t.unknownTokens == 4)
+        // Older servers don't send it.
+        #expect(try JSONDecoder().decode(Transcription.self, from: Data(#"{"text":"hey"}"#.utf8)).unknownTokens == nil)
+    }
+
     @Test func segmenterCutsAtPauses() {
         // 5 s of "speech", a 0.3 s pause, then 2 s more.
         let tone = (0..<80_000).map { Int16(truncatingIfNeeded: ($0 % 40 < 20) ? 8_000 : -8_000) }

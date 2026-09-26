@@ -63,6 +63,8 @@ final class StreamingDictation {
     private var parts: [Part] = []
     private var failure: Error?
     private var cancelled = false
+    /// Windows in a row that came back with `<unk>` tokens (see `commit`).
+    private var unknownTokenWindows = 0
 
     // Speech-to-text worker: transcribes up to the latest requested end.
     private var requestedEnd = 0
@@ -200,6 +202,17 @@ final class StreamingDictation {
     }
 
     private func commit(_ result: Transcription, windowStart: Int, windowEnd: Int, final: Bool) {
+        // Parakeet occasionally decodes a stretch as <unk> (the server retries once and strips
+        // what's left). Don't commit that window: its audio is transcribed again with the next
+        // one. After two bad windows in a row, commit the stripped text so the dictation moves on.
+        if let unknown = result.unknownTokens, unknown > 0 {
+            log.error("Window of \(Double(windowEnd - windowStart) / self.sampleRate, format: .fixed(precision: 1))s had \(unknown) <unk> tokens")
+            if !final, unknownTokenWindows < 2 {
+                unknownTokenWindows += 1
+                return
+            }
+        }
+        unknownTokenWindows = 0
         let words = result.words ?? []
         // Older servers don't report word timings: take the whole window.
         guard !final, !words.isEmpty else {

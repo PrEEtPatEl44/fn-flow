@@ -74,6 +74,11 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngi
     `StreamingTests` uses fakes.
   - `RecordingManager` hands audio over through a locked `SampleBuffer`, and `stop()` drains
     it after stopping the engine, so the last batch always lands in the stream and the WAV.
+- **Parakeet occasionally emits a run of `<unk>` tokens** (a degenerate decode; the same
+  audio transcribes fine moments later). It hasn't been reproduced on demand. The server
+  retries once, strips what's left, and reports `unk_tokens`; streaming won't commit such a
+  window. The offending audio is kept in `runtime/diagnostics/` (newest 10) under
+  `~/Library/Application Support/NemotronFlow/`: use it to find the root cause.
   - `AIBridge.process(audioURL:)` is the whole-file path (Undo, and the fallback if
     streaming fails). Both paths share `cleanChunk` and `finalize`.
 - **Nemotron generation (~35–45 tokens/s on this M5 Air) is the hard limit**, and Ollama
