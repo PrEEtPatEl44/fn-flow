@@ -37,6 +37,17 @@ enum TextCleaner {
         return longestRun > 30
     }
 
+    static let unknownToken = "<unk>"
+
+    /// Removes Parakeet's `<unk>` tokens (see runtime/server.py) and the gaps they leave.
+    static func stripUnknownTokens(_ text: String) -> String {
+        guard text.contains(unknownToken) else { return text }
+        return text.replacingOccurrences(of: unknownToken, with: " ")
+            .replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #" +([,.;:!?])"#, with: "$1", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func hasBacktrackCue(_ text: String) -> Bool {
         backtrackCues.contains { text.range(of: #"\b\#($0)\b"#, options: [.regularExpression, .caseInsensitive]) != nil }
     }

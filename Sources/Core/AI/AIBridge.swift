@@ -114,6 +114,12 @@ final class AIBridge {
     /// Formatting + dictionary on cleaned text, and the result the app delivers.
     func finalize(raw: String, cleaned: String, engine: DictationResult.Engine,
                   transcriptionTime: TimeInterval, cleanupTime: TimeInterval) throws -> DictationResult {
+        // Last line of defense: Parakeet's <unk> tokens must never be pasted.
+        if raw.contains(TextCleaner.unknownToken) || cleaned.contains(TextCleaner.unknownToken) {
+            log.error("Removed <unk> tokens from a transcript")
+        }
+        let raw = TextCleaner.stripUnknownTokens(raw)
+        let cleaned = TextCleaner.stripUnknownTokens(cleaned)
         let (final, dictionaryNotes) = PersonalDictionary.shared.apply(to: TextCleaner.format(cleaned))
         // e.g. "Mm-hmm." is all filler: paste nothing rather than stray punctuation.
         guard !TextCleaner.words(final).isEmpty else { throw FlowError.nothingHeard }
@@ -253,6 +259,14 @@ struct Transcription: Decodable, Sendable {
     let sentences: [Span]?
     /// Words with punctuation attached; missing from older runtime servers.
     let words: [Span]?
+    /// `<unk>` tokens Parakeet still produced after the server's retry (already removed
+    /// from the text). Missing from older runtime servers.
+    var unknownTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case text, sentences, words
+        case unknownTokens = "unk_tokens"
+    }
 }
 private struct ErrorResponse: Decodable { let detail: String }
 
