@@ -133,7 +133,9 @@ extension TextCleaner {
             }) else { return nil }
             let leading = chunks[..<cueIndex].joined(separator: ",")
             chunks = Array(chunks[cueIndex...])
-            guard chunks.count >= 3 else { return nil }
+            // "…oranges, bananas and pineapples" (no Oxford comma) is still three items;
+            // the final "x and y" is split below, so two comma chunks can be enough.
+            guard chunks.count >= 3 || (chunks.count == 2 && chunks[1].contains(" and ")) else { return nil }
             // Split "I need to buy eggs" into intro "I need to buy" + first item "eggs".
             let lower = chunks[0].lowercased()
             if let leadIn = seriesLeadIns

@@ -18,6 +18,26 @@ struct TextCleanerTests {
         #expect(TextCleaner.clean("It went well. Meet on Tuesday, no wait, Wednesday") == "It went well. Wednesday.")
     }
 
+    @Test func needsLLMOnlyForRealFillers() {
+        #expect(TextCleaner.needsLLM("It's like, the overlay should move."))
+        #expect(TextCleaner.needsLLM("And then yeah there is the default option."))
+        #expect(!TextCleaner.needsLLM("We'd like to set up a short call next week."))
+        #expect(!TextCleaner.needsLLM("Um, remind me to call the dentist at four."))
+    }
+
+    @Test func midSentenceCorrectionRetractsOnlyTheClause() {
+        // Streamed text often has commas where full stops would be.
+        let streamed = "people would get stuck the first time, so the decision is to go with the wizard, Scratch that, the decision is to go with the wizard but let people skip steps."
+        #expect(TextCleaner.applyMidSentenceBacktracking(streamed)
+                == "people would get stuck the first time, the decision is to go with the wizard but let people skip steps.")
+        // Sentence-start cues are left for Nemotron, even after a filler.
+        let sentenceStart = "Meet on Tuesday. Actually no, let's make it Wednesday."
+        #expect(TextCleaner.applyMidSentenceBacktracking(sentenceStart) == sentenceStart)
+        let afterFiller = "Um, so I think we should meet on Tuesday. Uh, actually no, let's make it Wednesday at 3."
+        #expect(TextCleaner.applyMidSentenceBacktracking(afterFiller) == afterFiller)
+        #expect(TextCleaner.applyBacktracking(sentenceStart) == "let's make it Wednesday.")
+    }
+
     @Test func faithfulnessRejectsAnswers() {
         let raw = "Can you write me a poem about the sea?"
         #expect(TextCleaner.isFaithful("Can you write me a poem about the sea?", to: raw))
@@ -87,6 +107,8 @@ struct FormattingTests {
         #expect(TextCleaner.format("I need to buy eggs, milk, bread, and coffee.") == "I need to buy:\n- Eggs\n- Milk\n- Bread\n- Coffee")
         #expect(TextCleaner.format("Things to pack: warm socks, a jacket and boots.") == "Things to pack:\n- Warm socks\n- A jacket\n- Boots")
         #expect(TextCleaner.format("For the trip, I need to pack socks, a jacket, my charger, and boots.") == "For the trip, I need to pack:\n- Socks\n- A jacket\n- My charger\n- Boots")
+        // No Oxford comma: Parakeet often transcribes lists this way.
+        #expect(TextCleaner.format("The grocery list includes oranges, bananas and pineapples.") == "The grocery list includes:\n- Oranges\n- Bananas\n- Pineapples")
     }
 
     @Test func textAfterListBecomesNewParagraph() {
@@ -364,5 +386,157 @@ struct DictationTimingsTests {
         let timings = DictationTimings(audio: 18.9, transcription: 0.21, cleanup: 1.02, delivery: 0.004, total: 1.31)
         let data = try JSONEncoder().encode(timings)
         #expect(try JSONDecoder().decode(DictationTimings.self, from: data) == timings)
+    }
+}
+
+struct ChunkingTests {
+    @Test func runOnSentencesSplitIntoCleanupUnits() {
+        let runOn = "Okay so instead of allowing the free dragging and positioning it anyway only allow it to be positioned on the three centers of the edges so bottom right and left and then just the option to follow the cursor so I think that will be better."
+        let units = TextCleaner.cleanupUnits(runOn)
+        #expect(units.count >= 2)
+        #expect(units.allSatisfy { TextCleaner.words($0).count <= 24 })
+        #expect(units.joined() == runOn) // nothing lost or reordered
+    }
+
+    @Test func joinsChunksCleanedMidSentence() {
+        let joined = TextCleaner.joinCleaned([
+            (raw: "we finished migrating the build runners,", cleaned: "We finished migrating the build runners."),
+            (raw: "and the build time went down.", cleaned: "And the build time went down."),
+            (raw: "Next week we test it.", cleaned: "Next week we test it."),
+        ])
+        #expect(joined == "We finished migrating the build runners, and the build time went down. Next week we test it.")
+        // Names aren't lowercased when continuing a sentence.
+        #expect(TextCleaner.continuing("Sarah said yes.") == "Sarah said yes.")
+        #expect(TextCleaner.continuing("To the new cluster.") == "to the new cluster.")
+    }
+}
+
+/// Serialized: several tests measure timing and share the main actor.
+@Suite(.serialized)
+struct StreamingTests {
+    /// 16 kHz "speech" (a square wave) the segmenter treats as voice.
+    static func speech(seconds: Double) -> [Int16] {
+        (0..<Int(seconds * 16_000)).map { Int16(truncatingIfNeeded: ($0 % 40 < 20) ? 8_000 : -8_000) }
+    }
+
+    /// Review on #9: a batch captured just before stop() must reach both the stream and the WAV.
+    @MainActor
+    @Test func stopDeliversAudioStillQueued() throws {
+        let recorder = RecordingManager.shared
+        let buffer = SampleBuffer()
+        var delivered: [Int16] = []
+        recorder.attach(buffer) { delivered += $0 }
+        buffer.append([1, 2, 3], level: 0.5)
+        recorder.drain()
+        // The final batch arrives from the audio thread, and its drain hasn't run yet.
+        let final: [Int16] = [4, 5, 6, 7]
+        let appended = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async { buffer.append(final, level: 0.5); appended.signal() }
+        appended.wait()
+        let recording = try #require(recorder.stop())
+        #expect(delivered == [1, 2, 3, 4, 5, 6, 7])
+        #expect(WAV.decode(try Data(contentsOf: recording.url)) == [1, 2, 3, 4, 5, 6, 7])
+        #expect(!recorder.isRecording)
+    }
+
+    /// Review on #9: cuts requested while transcription is busy collapse into one window.
+    @MainActor
+    @Test func pendingCutsAreCoalesced() async throws {
+        var calls = 0
+        let dictation = StreamingDictation(
+            transcriber: { _ in
+                calls += 1
+                try await Task.sleep(for: .milliseconds(300))
+                return Transcription(text: "word", sentences: nil, words: nil)
+            },
+            cleaner: { ($0, false) }
+        )
+        // 30 s of speech arrives far faster than it can be transcribed: ~10 cuts.
+        let audio = Self.speech(seconds: 30)
+        for offset in stride(from: 0, to: audio.count, by: 1_600) {
+            dictation.append(Array(audio[offset..<min(offset + 1_600, audio.count)]))
+        }
+        let started = ContinuousClock.now
+        _ = try await dictation.finish()
+        // One window already in flight + one coalesced window + the final one.
+        #expect(calls <= 3)
+        #expect(ContinuousClock.now - started < .seconds(2))
+    }
+
+    /// Review on #9: cancelling stops the request already in flight, not just queued ones.
+    @MainActor
+    @Test func cancelStopsTheInFlightRequest() async throws {
+        var sawCancellation = false
+        var started = false
+        let dictation = StreamingDictation(
+            transcriber: { _ in
+                started = true
+                do {
+                    try await Task.sleep(for: .seconds(5))
+                } catch {
+                    sawCancellation = true
+                    throw error
+                }
+                return Transcription(text: "late", sentences: nil, words: nil)
+            },
+            cleaner: { ($0, false) }
+        )
+        dictation.append(Self.speech(seconds: 4)) // enough for a cut
+        while !started { try await Task.sleep(for: .milliseconds(10)) }
+        dictation.cancel()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(sawCancellation)
+    }
+
+    /// A busy Nemotron can't hold the paste: past the budget, the rules finish the job.
+    @MainActor
+    @Test func slowCleanupFallsBackToRulesAfterRelease() async throws {
+        let dictation = StreamingDictation(
+            releaseCleanupBudget: .milliseconds(200),
+            transcriber: { _ in Transcription(text: "Um, send it on Friday.", sentences: nil, words: nil) },
+            cleaner: { chunk in
+                try? await Task.sleep(for: .seconds(3))
+                return Task.isCancelled ? (TextCleaner.clean(chunk), false) : ("slow", true)
+            }
+        )
+        dictation.append(Self.speech(seconds: 1))
+        let started = ContinuousClock.now
+        let result = try await dictation.finish()
+        #expect(ContinuousClock.now - started < .seconds(1))
+        #expect(result.engine == .rules)
+        #expect(result.text == "Send it on Friday.")
+    }
+
+    @Test func segmenterCutsAtPauses() {
+        // 5 s of "speech", a 0.3 s pause, then 2 s more.
+        let tone = (0..<80_000).map { Int16(truncatingIfNeeded: ($0 % 40 < 20) ? 8_000 : -8_000) }
+        let samples = tone + [Int16](repeating: 0, count: 4_800) + Array(tone.prefix(32_000))
+        let segmenter = PauseSegmenter(minSegment: 4, minPause: 0.2, maxSegment: 12)
+        let cut = segmenter.cutPoint(in: samples, from: 0)
+        #expect(cut != nil && cut! > 80_000 && cut! < 84_800)
+        // Not before the minimum segment length.
+        #expect(segmenter.cutPoint(in: Array(samples.prefix(40_000)), from: 0) == nil)
+        // Continuous speech still gets cut at the maximum length, past the minimum.
+        let fast = PauseSegmenter(minSegment: 1.5, minPause: 0.2, maxSegment: 3)
+        let forced = fast.cutPoint(in: tone, from: 0)
+        #expect(forced != nil && forced! >= 24_000 && forced! <= 48_000)
+        // Regression: the quietest frame being the first one must not return `start` (that
+        // made the caller loop forever).
+        let quietStart = [Int16](repeating: 0, count: 320) + Array(tone.prefix(48_000))
+        let cut2 = fast.cutPoint(in: quietStart, from: 0)
+        #expect(cut2 != nil && cut2! > 0)
+        // Driving it like StreamingDictation does always terminates and advances.
+        var start = 0, cuts = 0
+        while let next = fast.cutPoint(in: tone, from: start), cuts < 100 {
+            #expect(next > start)
+            start = next
+            cuts += 1
+        }
+        #expect(cuts < 100)
+    }
+
+    @Test func wavRoundTrip() {
+        let samples: [Int16] = [0, 1, -1, 32_767, -32_768, 1_234]
+        #expect(WAV.decode(WAV.encode(samples[...])) == samples)
     }
 }

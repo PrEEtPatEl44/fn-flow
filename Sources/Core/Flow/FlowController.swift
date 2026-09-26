@@ -22,6 +22,8 @@ final class FlowController: ObservableObject {
         didSet { HotkeyManager.shared.escapeCancels = phase == .listening }
     }
     private var mode: Mode = .hold
+    /// Transcribes and cleans the current dictation while it's being spoken (#7).
+    private var dictation: StreamingDictation?
 
     private let overlay = OverlayWindowManager.shared
     private let minimumDuration: TimeInterval = 0.3
@@ -76,7 +78,9 @@ final class FlowController: ObservableObject {
             return
         }
         do {
-            try RecordingManager.shared.start()
+            let dictation = StreamingDictation()
+            try RecordingManager.shared.start { [weak dictation] samples in dictation?.append(samples) }
+            self.dictation = dictation
             self.mode = mode
             phase = .listening
             overlay.show(.listening)
@@ -92,13 +96,16 @@ final class FlowController: ObservableObject {
         // The user's wait starts now; it's what History reports as the total.
         let finishedAt = ContinuousClock.now
         guard phase == .listening, let recording = RecordingManager.shared.stop() else { return }
+        let streaming = dictation
+        dictation = nil
         log.notice("Recorded \(recording.duration, format: .fixed(precision: 2))s")
         guard recording.duration >= minimumDuration else {
+            streaming?.cancel()
             phase = .idle
             overlay.hide()
             return
         }
-        transcribe(recording.url, audioLength: recording.duration, finishedAt: finishedAt)
+        transcribe(recording.url, streaming: streaming, audioLength: recording.duration, finishedAt: finishedAt)
     }
 
     /// ✕ / Esc (`notify`: offers Undo), or a silent abort when the hotkey was really part
@@ -106,6 +113,8 @@ final class FlowController: ObservableObject {
     func cancel(notify: Bool) {
         guard phase == .listening else { return }
         let recording = RecordingManager.shared.stop()
+        dictation?.cancel()
+        dictation = nil
         phase = .idle
         log.notice("Dictation cancelled")
         guard notify else {
@@ -126,7 +135,10 @@ final class FlowController: ObservableObject {
     }
 
     /// `finishedAt`: when the user finished (release, ✓, or Undo), the start of the wait.
-    private func transcribe(_ audioURL: URL, audioLength: TimeInterval, finishedAt: ContinuousClock.Instant) {
+    /// With `streaming`, most of the work already happened while the user spoke; if it
+    /// fails, the saved recording is transcribed in full instead.
+    private func transcribe(_ audioURL: URL, streaming: StreamingDictation? = nil,
+                            audioLength: TimeInterval, finishedAt: ContinuousClock.Instant) {
         phase = .processing
         overlay.show(.processing)
         // Remember where the text is going so later edits there can be learned from.
@@ -136,7 +148,19 @@ final class FlowController: ObservableObject {
         Task {
             defer { phase = .idle }
             do {
-                let result = try await AIBridge.shared.process(audioURL: audioURL)
+                let result: DictationResult
+                if let streaming {
+                    do {
+                        result = try await streaming.finish()
+                    } catch FlowError.nothingHeard {
+                        throw FlowError.nothingHeard
+                    } catch {
+                        log.error("Streaming failed (\(error.localizedDescription, privacy: .public)); transcribing the full recording")
+                        result = try await AIBridge.shared.process(audioURL: audioURL)
+                    }
+                } else {
+                    result = try await AIBridge.shared.process(audioURL: audioURL)
+                }
                 log.notice("Transcribed: \(result.raw, privacy: .private) -> \(result.text, privacy: .private)")
                 let settings = AppSettings.shared
                 let (paste, copy) = (settings.pasteAtCursor, settings.copyToClipboard)

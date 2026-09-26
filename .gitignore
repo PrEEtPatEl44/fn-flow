@@ -8,3 +8,7 @@ DerivedData/
 .netrc
 /build
 .swiftpm/
+
+# Benchmark data is built from personal dictations: keep it local.
+/bench/data/
+/bench/results/
