@@ -14,7 +14,7 @@ By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Getting set up
 
-You need an **Apple Silicon Mac on macOS 14+** and **Xcode 16 or newer** (Swift 6).
+You need an **Apple Silicon Mac on macOS 14+** and **Xcode 26 or newer** (Swift 6.2+).
 
 ```bash
 git clone https://github.com/PrEEtPatEl44/fn-flow.git
