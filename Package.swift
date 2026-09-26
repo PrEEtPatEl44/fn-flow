@@ -15,5 +15,13 @@ let package = Package(
                 .enableUpcomingFeature("ApproachableConcurrency"),
             ],
         ),
+        .testTarget(
+            name: "nemotron_flowTests",
+            dependencies: ["nemotron_flow"],
+            path: "Tests",
+            swiftSettings: [
+                .enableUpcomingFeature("ApproachableConcurrency"),
+            ],
+        ),
     ]
 )
