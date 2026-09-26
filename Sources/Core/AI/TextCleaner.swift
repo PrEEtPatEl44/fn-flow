@@ -19,6 +19,10 @@ enum TextCleaner {
         return tidy(text)
     }
 
+    static func hasBacktrackCue(_ text: String) -> Bool {
+        backtrackCues.contains { text.range(of: #"\b\#($0)\b"#, options: [.regularExpression, .caseInsensitive]) != nil }
+    }
+
     static func hasFillers(_ text: String) -> Bool {
         text.range(of: fillerPattern, options: .regularExpression) != nil
     }
@@ -83,15 +87,82 @@ enum TextCleaner {
         return result
     }
 
-    /// Guards against the LLM answering or rewriting instead of cleaning up: the output
-    /// must be built almost entirely from words the speaker actually said.
+    /// Guards against the LLM acting like an assistant instead of a cleanup step. Output is
+    /// rejected if it adds words the speaker didn't say (an answer or refusal), drops the
+    /// speaker's content (a summary, outline, or truncation), or opens with a reply
+    /// preamble ("Sure, here's…").
     static func isFaithful(_ output: String, to raw: String) -> Bool {
-        let outWords = words(output)
-        let rawWords = words(raw)
+        // Compare word stems so "here is" -> "here's" or "I am" -> "I'm" isn't a change.
+        let outWords = words(output).map(stripContraction)
+        let rawWords = words(raw).map(stripContraction)
         guard !outWords.isEmpty else { return false }
+
+        // Doesn't add: built almost entirely from the speaker's words.
         let rawSet = Set(rawWords)
         let known = outWords.filter { rawSet.contains($0) }.count
-        return Double(known) / Double(outWords.count) >= 0.75 && outWords.count <= rawWords.count + 3
+        guard Double(known) / Double(outWords.count) >= 0.75, outWords.count <= rawWords.count + 3 else { return false }
+
+        // Doesn't drop: keeps the speaker's content words. Self-corrections legitimately
+        // remove the replaced part, so allow more loss when the speaker corrected themselves.
+        let content = rawWords.filter { $0.count >= 4 && !nonContentWords.contains($0) }
+        if !content.isEmpty {
+            let outSet = Set(outWords)
+            let kept = Double(content.filter { outSet.contains($0) }.count) / Double(content.count)
+            if kept < (hasCorrectionHint(raw) ? 0.5 : 0.85) { return false }
+        }
+
+        // Not a reply: unless the speaker actually started that way.
+        if let first = outWords.first, replyOpeners.contains(first), first != rawWords.first(where: { !isFiller($0) }) {
+            return false
+        }
+        return true
+    }
+
+    private static let replyOpeners: Set<String> = ["sure", "certainly", "here", "sorry", "as", "absolutely"]
+
+    private static func stripContraction(_ word: String) -> String {
+        word.replacingOccurrences(of: #"'(?:s|m|re|ll|ve|d)$"#, with: "", options: .regularExpression)
+    }
+
+    /// Fillers and function words the cleanup may drop or change without losing meaning.
+    private static let nonContentWords: Set<String> = [
+        "like", "basically", "actually", "literally", "really", "just", "okay", "yeah", "right",
+        "kind", "sort", "know", "mean", "gonna", "wanna", "well", "sure", "stuff", "thing", "things",
+        "that", "this", "then", "than", "there", "they", "them", "their", "with", "have", "been",
+        "from", "what", "when", "will", "would", "could", "should", "also", "into", "some", "were",
+        "your", "yours", "it's", "that's", "there's", "we're", "they're", "i'm", "don't", "doesn't",
+        "very", "much", "more", "only", "even", "about", "along",
+    ]
+
+    private static func isFiller(_ word: String) -> Bool {
+        word.range(of: #"^(?:u+m+|u+h+|uhm|erm|e+r+|a+h+|hm+|mm+|okay|so|like)$"#, options: .regularExpression) != nil
+    }
+
+    static func hasCorrectionHint(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return correctionHints.contains { lower.range(of: #"\b\#($0)\b"#, options: .regularExpression) != nil }
+    }
+
+    /// Splits a transcript into chunks of whole sentences (~`maxWords` each) for the LLM.
+    /// A sentence that starts with a correction cue stays with the one before it, so
+    /// "…Tuesday. Actually no, Wednesday." is cleaned up as one piece.
+    static func chunks(_ text: String, maxWords: Int = 45) -> [String] {
+        let sentences = text.matches(of: #/[^.!?]+[.!?]*\s*/#).map { String($0.output) }
+        var chunks: [String] = []
+        var current = ""
+        for sentence in sentences {
+            let startsWithCorrection = sentence.trimmingCharacters(in: .whitespaces).lowercased()
+                .range(of: #"^(?:uh,?\s+|um,?\s+)?(?:actually|no wait|wait no|scratch that|never mind|i mean|sorry)\b"#, options: .regularExpression) != nil
+            if !current.isEmpty, !startsWithCorrection, words(current + sentence).count > maxWords {
+                chunks.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            }
+            current += sentence
+        }
+        if !current.trimmingCharacters(in: .whitespaces).isEmpty {
+            chunks.append(current.trimmingCharacters(in: .whitespaces))
+        }
+        return chunks.isEmpty ? [text] : chunks
     }
 
     /// Short human-readable notes for the "mini-toast" shown after pasting.

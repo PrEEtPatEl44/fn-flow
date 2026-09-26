@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 enum SettingsTab: String, Hashable {
-    case general, models, dictionary, permissions
+    case general, history, models, dictionary, permissions
 }
 
 @MainActor
@@ -21,7 +21,7 @@ final class SettingsWindowController {
         if let tab { selection.tab = tab }
         if window == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 620, height: 520),
+                contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
@@ -45,6 +45,9 @@ struct SettingsView: View {
             GeneralSettings()
                 .tabItem { Label("General", systemImage: "keyboard") }
                 .tag(SettingsTab.general)
+            HistorySettings()
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+                .tag(SettingsTab.history)
             ModelsSettings()
                 .tabItem { Label("Models", systemImage: "cpu") }
                 .tag(SettingsTab.models)
@@ -56,7 +59,7 @@ struct SettingsView: View {
                 .tag(SettingsTab.permissions)
         }
         .padding()
-        .frame(width: 620, height: 520)
+        .frame(width: 680, height: 560)
     }
 }
 
@@ -146,6 +149,122 @@ private struct HotkeyRecorder: View {
     private func stop() {
         HotkeyManager.shared.endCapture()
         isRecording = false
+    }
+}
+
+// MARK: - History
+
+private struct HistorySettings: View {
+    @ObservedObject private var history = DictationHistory.shared
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var confirmClear = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("What Parakeet heard, and what was delivered. Stored only on this Mac.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear History…") { confirmClear = true }
+                    .disabled(history.entries.isEmpty)
+                    .confirmationDialog("Delete all \(history.entries.count) dictations?", isPresented: $confirmClear) {
+                        Button("Delete All", role: .destructive) { history.clear() }
+                    }
+            }
+            .padding(.horizontal, 4)
+
+            if history.entries.isEmpty {
+                ContentUnavailableView(
+                    "No dictations yet",
+                    systemImage: "waveform",
+                    description: Text("Hold \(settings.hotkey.displayName) and speak. Each dictation shows up here.")
+                )
+            } else {
+                List(history.entries) { entry in
+                    HistoryRow(entry: entry)
+                }
+                .listStyle(.inset(alternatesRowBackgrounds: true))
+            }
+        }
+    }
+}
+
+private struct HistoryRow: View {
+    let entry: DictationHistory.Entry
+
+    private var engineColor: Color {
+        switch entry.engine {
+        case .nemotron: .purple
+        case .mixed: .orange
+        case .rules: .gray
+        }
+    }
+
+    private var engineHelp: String {
+        switch entry.engine {
+        case .nemotron: "Cleaned up by Nemotron"
+        case .mixed: "Nemotron cleaned up part of this; rules handled sections where its output wasn't faithful"
+        case .rules: "Rule-based cleanup (Nemotron off, unavailable, or its output wasn't faithful)"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(entry.date, format: .dateTime.month(.abbreviated).day().hour().minute())
+                    .foregroundStyle(.secondary)
+                if let app = entry.app {
+                    Text("→ \(app)").foregroundStyle(.secondary)
+                }
+                Text(entry.engine.rawValue)
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(engineColor.opacity(0.2)))
+                    .help(engineHelp)
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(entry.text, forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                .help("Copy the delivered text")
+                Button(role: .destructive) {
+                    DictationHistory.shared.delete(entry)
+                } label: { Image(systemName: "trash") }
+                .help("Delete this entry")
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+
+            Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 6) {
+                GridRow {
+                    Text(entry.pasted ? "Pasted" : "Copied")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .gridColumnAlignment(.trailing)
+                    Text(entry.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                GridRow {
+                    Text("Raw")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(entry.raw)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            if !entry.notes.isEmpty {
+                Text(entry.notes.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 

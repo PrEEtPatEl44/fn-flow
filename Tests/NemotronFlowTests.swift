@@ -33,6 +33,94 @@ struct TextCleanerTests {
     }
 }
 
+/// Regression cases taken from real dictations where Nemotron acted like an assistant.
+struct FaithfulnessTests {
+    static let overlayRaw = "Okay, so the other feature we need to add is basically the overlay follows the mouse. So I want to keep that as an option. And then along with that, I want to provide the option so that the overlay is basically like at the horizontal bottom of the screen or like it could be placed anywhere on any of the four lateral sides of the screen."
+
+    @Test func rejectsOutlineOfInstructions() {
+        let outline = "Sure, here's what I understand:\n- The overlay should follow the mouse\n- The user should have the option to place the overlay at the horizontal bottom"
+        #expect(!TextCleaner.isFaithful(outline, to: Self.overlayRaw))
+    }
+
+    @Test func rejectsTruncation() {
+        let raw = "In terms of evaluation there has been some local development. One of the things we have realized is the latency is way too much and the model calls the search underscore catalog function many times and we need to find the reason and fix it."
+        let truncated = "In terms of evaluation, there has been some local development."
+        #expect(!TextCleaner.isFaithful(truncated, to: raw))
+    }
+
+    @Test func rejectsReplyPreamble() {
+        let raw = "Please send the updated deck to the team before the review."
+        #expect(!TextCleaner.isFaithful("Sure, please send the updated deck to the team before the review.", to: raw))
+        // …but a speaker who really starts with "sure" is fine.
+        #expect(TextCleaner.isFaithful("Sure, I can send the deck.", to: "Sure, uh, I can send the deck."))
+        #expect(TextCleaner.isFaithful("Here's the plan: fix the bug.", to: "Here is the plan. Fix the bug."))
+    }
+
+    @Test func acceptsLightCleanup() {
+        let cleaned = "The other feature we need to add is that the overlay follows the mouse. So I want to keep that as an option. Along with that, I want to provide the option so that the overlay is at the horizontal bottom of the screen, or it could be placed anywhere on any of the four lateral sides of the screen."
+        #expect(TextCleaner.isFaithful(cleaned, to: Self.overlayRaw))
+        #expect(TextCleaner.isFaithful("I think we should meet on Wednesday at 3.", to: "Um, so I think we should meet on Tuesday. Uh, actually no, let's make it Wednesday at 3."))
+    }
+
+    @Test func chunksKeepCorrectionsWithWhatTheyCorrect() {
+        let text = String(repeating: "This is a filler sentence with several words in it. ", count: 4)
+            + "We meet on Tuesday. Actually no, Wednesday."
+        let chunks = TextCleaner.chunks(text, maxWords: 12)
+        #expect(chunks.contains { $0.contains("Tuesday") && $0.contains("Actually no, Wednesday") })
+        #expect(chunks.joined(separator: " ") == text.trimmingCharacters(in: .whitespaces))
+    }
+}
+
+struct FormattingTests {
+    @Test func enumeratedSteps() {
+        let text = "Here's the plan. First, fix the login bug. Second, update the docs. And finally, ship it. Thanks everyone."
+        #expect(TextCleaner.format(text) == "Here's the plan:\n- Fix the login bug\n- Update the docs\n- Ship it\n\nThanks everyone.")
+    }
+
+    @Test func numberedSteps() {
+        let text = "To set it up, step one, install the models, step two, grant permissions, step three, hold the hotkey."
+        #expect(TextCleaner.format(text) == "To set it up:\n- Install the models\n- Grant permissions\n- Hold the hotkey")
+    }
+
+    @Test func cuedInlineSeries() {
+        #expect(TextCleaner.format("I need to buy eggs, milk, bread, and coffee.") == "I need to buy:\n- Eggs\n- Milk\n- Bread\n- Coffee")
+        #expect(TextCleaner.format("Things to pack: warm socks, a jacket and boots.") == "Things to pack:\n- Warm socks\n- A jacket\n- Boots")
+        #expect(TextCleaner.format("For the trip, I need to pack socks, a jacket, my charger, and boots.") == "For the trip, I need to pack:\n- Socks\n- A jacket\n- My charger\n- Boots")
+    }
+
+    @Test func textAfterListBecomesNewParagraph() {
+        #expect(TextCleaner.format("Please grab apples, pears, and plums. See you soon.") == "Please grab:\n- Apples\n- Pears\n- Plums\n\nSee you soon.")
+    }
+
+    @Test func proseIsLeftAlone() {
+        for text in [
+            "I went home, ate dinner, and slept.",
+            "We need to talk about pricing, hiring, and the roadmap for next quarter.",
+            "At first I was unsure, but second thoughts helped.",
+            "The first time we met was great.",
+        ] {
+            #expect(TextCleaner.format(text) == text)
+        }
+    }
+
+    @Test func normalizesLLMBullets() {
+        #expect(TextCleaner.format("Groceries:\n* Eggs\n* Milk") == "Groceries:\n- Eggs\n- Milk")
+        #expect(TextCleaner.format("Steps:\n1. Build.\n2. Ship.") == "Steps:\n- Build\n- Ship")
+    }
+
+    @Test func questionMarksFromStructure() {
+        #expect(TextCleaner.format("Can you send me the deck. Thanks.") == "Can you send me the deck? Thanks.")
+        #expect(TextCleaner.format("What is the status of the launch.") == "What is the status of the launch?")
+        #expect(TextCleaner.format("Is there a meeting tomorrow") == "Is there a meeting tomorrow?")
+    }
+
+    @Test func statementsAndCommandsKeepPeriods() {
+        for text in ["Do it now.", "What I mean is we should wait.", "Will do.", "How to fix it is unclear."] {
+            #expect(TextCleaner.format(text) == text)
+        }
+    }
+}
+
 struct CorrectionDiffTests {
     @Test func unchangedTextYieldsNothing() {
         #expect(CorrectionDiff.substitutions(pasted: "Send it to Jon.", current: "Hi. Send it to Jon. Bye") == [])
@@ -111,6 +199,32 @@ struct PipelineIntegrationTests {
         #expect(result.text.contains("Wednesday"))
         #expect(!result.text.contains("Tuesday"))
         #expect(!result.text.lowercased().contains("um,"))
+    }
+
+    @Test func spokenListsBecomeBullets() async throws {
+        let audio = try speak("Um, for the trip I need to pack socks, a jacket, my charger, and boots")
+        let result = try await AIBridge.shared.process(audioURL: audio)
+        print("RAW:", result.raw, "\nFINAL:", result.text, "\nENGINE:", result.engine)
+        #expect(result.text.contains("\n- "))
+        #expect(result.text.lowercased().contains("- boots"))
+    }
+
+    @Test func spokenStepsBecomeBullets() async throws {
+        let audio = try speak("Here is the plan. First, fix the login bug. Second, update the docs. And finally, ship it on Friday.")
+        let result = try await AIBridge.shared.process(audioURL: audio)
+        print("RAW:", result.raw, "\nFINAL:", result.text, "\nENGINE:", result.engine)
+        #expect(result.text.components(separatedBy: "\n- ").count == 4)
+    }
+
+    @Test func instructionalSpeechIsTypedNotActedOn() async {
+        let raw = FaithfulnessTests.overlayRaw + " So be it horizontal bottom, horizontal top or vertical bottom, vertical. Not the vertical top because there is the Apple notch. But yeah, these three should be available generally. Or like there should be the ability to move it and place it somewhere in the corner. So there should be a default placement and then the user could kind of drag and drop it."
+        let (text, engine) = await AIBridge.shared.cleanUp(raw)
+        print("ENGINE:", engine, "\nOUT:", text)
+        #expect(!text.contains("\n- "))
+        #expect(!text.lowercased().hasPrefix("sure"))
+        #expect(Double(TextCleaner.words(text).count) >= Double(TextCleaner.words(raw).count) * 0.75)
+        #expect(text.contains("notch"))
+        #expect(text.contains("drag and drop"))
     }
 
     @Test func questionsAreTranscribedNotAnswered() async throws {
