@@ -1,0 +1,76 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+A macOS menu bar app (Swift 6, SwiftUI, macOS 14+, Apple Silicon): hold a hotkey, speak, release,
+and the text is pasted at the text cursor. Transcription and cleanup run fully locally. Product
+spec: `PRD.md`.
+
+## Commands
+
+```bash
+swift build                                   # debug build
+swift test                                    # unit tests (Swift Testing)
+swift test --filter TextCleanerTests          # one suite
+swift test --filter "CorrectionDiffTests/learnsMisheardName"  # one test
+NEMOTRON_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # e2e; needs runtime up
+scripts/build_app.sh [--run|--install]        # signed .app in build/ (required for real use)
+runtime/install_runtime.sh                    # install/repair local models (~5 GB, idempotent)
+/usr/bin/log stream --predicate 'subsystem == "dev.nemotronflow.app"'   # app logs
+```
+
+- Use the full `/usr/bin/log` path: zsh's `log` builtin shadows it and silently returns nothing.
+- `swift run` is not a usable way to test the app. Microphone and Accessibility permissions need the
+  bundle's `Info.plist` and signature, so always test through `scripts/build_app.sh`.
+- There is no linter configured.
+
+## Architecture
+
+The flow is two processes, plus Ollama:
+
+```
+HotkeyManager (CGEvent tap) → FlowController → RecordingManager (16 kHz LPCM WAV)
+  → AIBridge: POST localhost:8765/transcribe (runtime/server.py, Parakeet via parakeet-mlx)
+            → Ollama /api/chat (nemotron-mini) → PersonalDictionary.apply
+  → AccessibilityManager.deliver (⌘V or clipboard only) → CorrectionTracker (learns edits)
+```
+
+- **`FlowController`** is the state machine (idle → listening → processing) and the only place
+  that wires the managers together. Most other types are `@MainActor` singletons (`.shared`).
+- **`RuntimeManager`** owns the local AI runtime. It runs `install_runtime.sh`, launches
+  `server.py` as a child process (and kills it on quit), and starts Ollama if needed. The runtime
+  lives in `~/Library/Application Support/NemotronFlow/runtime/`, which also holds `server.log`
+  and the `asr_model` marker file. It copies the bundled `server.py` over the installed one on
+  every start, so edits to `runtime/server.py` ship with the app. Bundled scripts are found in
+  the .app's `Resources/`, with a `#filePath` fallback to the repo `runtime/` directory.
+- **LLM output is untrusted.** `nemotron-mini` sometimes answers the transcript instead of
+  cleaning it up. `TextCleaner.isFaithful` rejects any output not built from the spoken words,
+  and falls back to the rule-based `TextCleaner.clean`. Keep that guard when changing the prompt
+  or the model.
+- **`runtime/server.py` `/transcribe` must stay `async def`.** MLX streams are thread-local, and
+  FastAPI runs sync endpoints in a threadpool, which fails with "There is no Stream(cpu, 1)".
+- **Correction learning** (`CorrectionTracker` / `CorrectionDiff`): after a paste, it polls the
+  focused `AXUIElement`'s value and learns word substitutions only if they "sound alike"
+  (phonetic key + edit distance). This keeps content edits like Tuesday → Wednesday out of the
+  dictionary. The dictionary is stored in `…/NemotronFlow/dictionary.json`.
+- **Overlay**: a click-through, non-activating `NSPanel` (`hidesOnDeactivate = false`) that eases
+  toward the mouse on a 60 Hz timer. `OverlayModel.phase` drives all SwiftUI states and
+  transitions.
+
+## Gotchas
+
+- **Never do work inside the CGEvent tap callback.** macOS disables taps that block (starting the
+  mic can take ~1s), and the key-release event is then lost. `HotkeyManager.fire` defers
+  callbacks to the next main-queue turn.
+- **Hotkey model**: modifier-only hotkeys match on `.flagsChanged` using device-specific flag bits
+  (to tell left from right); combos match on keyDown/keyUp and are swallowed. Plain letters
+  without modifiers are rejected (`Hotkey.isAcceptable`).
+- **Accessibility is tied to the code signature.** `build_app.sh` signs with an Apple identity if
+  one exists, otherwise a self-signed "Nemotron Flow Local Signing" identity stored in
+  `…/NemotronFlow/signing/signing.keychain-db`. Don't switch to ad-hoc signing: every rebuild
+  would then silently void the grant. To reset: `tccutil reset Accessibility dev.nemotronflow.app`.
+- **Swift 6 strict concurrency** (`ApproachableConcurrency`): C callbacks and `Timer` closures use
+  `MainActor.assumeIsolated`. Use string literals like `"AXFocusedUIElement" as CFString` instead
+  of the imported `kAX…` globals.
