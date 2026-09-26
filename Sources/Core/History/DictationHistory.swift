@@ -16,6 +16,14 @@ final class DictationHistory: ObservableObject {
         /// The app that had focus when the text was delivered.
         let app: String?
         let pasted: Bool
+        /// nil for dictations recorded before timings were tracked.
+        let timings: DictationTimings?
+    }
+
+    /// Median wait (finish → delivered) over the most recent timed dictations.
+    func medianLatency(last count: Int = 20) -> (seconds: TimeInterval, sampleSize: Int)? {
+        let recent = entries.compactMap { $0.timings?.total }.prefix(count)
+        return DictationTimings.median(Array(recent)).map { ($0, recent.count) }
     }
 
     @Published private(set) var entries: [Entry] = []
@@ -31,10 +39,10 @@ final class DictationHistory: ObservableObject {
         }
     }
 
-    func add(_ result: DictationResult, app: String?, pasted: Bool) {
+    func add(_ result: DictationResult, app: String?, pasted: Bool, timings: DictationTimings) {
         entries.insert(Entry(
             id: UUID(), date: Date(), raw: result.raw, text: result.text,
-            notes: result.notes, engine: result.engine, app: app, pasted: pasted
+            notes: result.notes, engine: result.engine, app: app, pasted: pasted, timings: timings
         ), at: 0)
         if entries.count > limit { entries.removeLast(entries.count - limit) }
         save()

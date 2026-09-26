@@ -89,6 +89,8 @@ final class FlowController: ObservableObject {
 
     /// Stops recording and transcribes (hotkey release, ✓, or hotkey again when hands-free).
     func finish() {
+        // The user's wait starts now; it's what History reports as the total.
+        let finishedAt = ContinuousClock.now
         guard phase == .listening, let recording = RecordingManager.shared.stop() else { return }
         log.notice("Recorded \(recording.duration, format: .fixed(precision: 2))s")
         guard recording.duration >= minimumDuration else {
@@ -96,7 +98,7 @@ final class FlowController: ObservableObject {
             overlay.hide()
             return
         }
-        transcribe(recording.url)
+        transcribe(recording.url, audioLength: recording.duration, finishedAt: finishedAt)
     }
 
     /// ✕ / Esc (`notify`: offers Undo), or a silent abort when the hotkey was really part
@@ -116,14 +118,15 @@ final class FlowController: ObservableObject {
             if (try? FileManager.default.copyItem(at: recording.url, to: cancelledRecordingURL)) != nil {
                 undo = .init(title: "Undo") { [weak self] in
                     guard let self, phase == .idle else { return }
-                    transcribe(cancelledRecordingURL)
+                    transcribe(cancelledRecordingURL, audioLength: recording.duration, finishedAt: .now)
                 }
             }
         }
         overlay.notify(OverlayNotice(message: "Transcript cancelled", action: undo, duration: 5))
     }
 
-    private func transcribe(_ audioURL: URL) {
+    /// `finishedAt`: when the user finished (release, ✓, or Undo), the start of the wait.
+    private func transcribe(_ audioURL: URL, audioLength: TimeInterval, finishedAt: ContinuousClock.Instant) {
         phase = .processing
         overlay.show(.processing)
         // Remember where the text is going so later edits there can be learned from.
@@ -137,9 +140,18 @@ final class FlowController: ObservableObject {
                 log.notice("Transcribed: \(result.raw, privacy: .private) -> \(result.text, privacy: .private)")
                 let settings = AppSettings.shared
                 let (paste, copy) = (settings.pasteAtCursor, settings.copyToClipboard)
-                DictationHistory.shared.add(result, app: targetApp, pasted: paste)
+                let deliveryStart = ContinuousClock.now
                 AccessibilityManager.shared.deliver(result.text, paste: paste, copy: copy)
-                log.notice("Delivered \(result.text.count) chars (paste: \(paste), copy: \(copy)), AX trusted: \(AccessibilityManager.shared.isTrusted)")
+                let delivered = ContinuousClock.now
+                let timings = DictationTimings(
+                    audio: audioLength,
+                    transcription: result.transcriptionTime,
+                    cleanup: result.cleanupTime,
+                    delivery: (delivered - deliveryStart).seconds,
+                    total: (delivered - finishedAt).seconds
+                )
+                DictationHistory.shared.add(result, app: targetApp, pasted: paste, timings: timings)
+                log.notice("Delivered \(result.text.count) chars (paste: \(paste), copy: \(copy)) in \(timings.total, format: .fixed(precision: 3))s [asr \(timings.transcription, format: .fixed(precision: 3))s, cleanup \(timings.cleanup, format: .fixed(precision: 3))s, deliver \(timings.delivery, format: .fixed(precision: 3))s] for \(audioLength, format: .fixed(precision: 1))s audio, AX trusted: \(AccessibilityManager.shared.isTrusted)")
                 let title = switch (paste, copy) {
                 case (true, true): "Pasted & copied"
                 case (true, false): "Pasted"
