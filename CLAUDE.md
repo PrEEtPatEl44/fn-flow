@@ -35,9 +35,11 @@ runtime/install_runtime.sh                    # install/repair local models (~5 
 - `swift run` is not a usable way to test the app. Microphone and Accessibility permissions need the
   bundle's `Info.plist` and signature, so always test through `scripts/build_app.sh`.
 - There is no linter configured.
-- The benchmark reads `bench/data/dataset.json` (cases with a gold output each) and writes
-  `bench/results/`. Both are **git-ignored and local-only**: the dataset is built from personal
-  dictations. It runs a `baseline` (original, whole-file) and an `optimized` (streaming)
+- The benchmark reads `bench/data/dataset.json` if it exists, otherwise the committed
+  `bench/dataset.sample.json` (synthetic cases only). Each case has a gold output. It writes
+  `bench/results/`. `bench/data/` and `bench/results/` are **git-ignored and local-only**,
+  because the private dataset is built from personal dictations. Never commit personal
+  dictations to the sample. It runs a `baseline` (original, whole-file) and an `optimized` (streaming)
   variant interleaved on every case, because this MacBook Air throttles, so runs minutes apart
   aren't comparable. Knobs: `FN_FLOW_BENCH_RUNS`, `FN_FLOW_BENCH_SPEED` (feed audio faster than
   real time), `FN_FLOW_BENCH_ONLY=id1,id2`.

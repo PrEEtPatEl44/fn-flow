@@ -66,8 +66,10 @@ FN_FLOW_BENCH=1 FN_FLOW_BENCH_LABEL=run swift test --filter BenchmarkTests
 python3 bench/compare.py run-baseline run-optimized
 ```
 
-It reads a dataset from `bench/data/dataset.json`, which is git-ignored because it's built
-from personal dictations. Each case has an `id`, `category` (`small`/`medium`/`large`),
+It uses `bench/dataset.sample.json`, 9 synthetic dictations (short and long). To benchmark
+your own dictations, put them in `bench/data/dataset.json`, which is used instead when it
+exists and is git-ignored so personal text never gets committed. `FN_FLOW_BENCH_DATASET=path`
+picks a dataset explicitly. Each case has an `id`, `category` (`small`/`medium`/`large`),
 `speech` (spoken with `say` to make the audio), `gold` (the ideal output), and optional
 `expect` checks. See `Tests/BenchmarkTests.swift`.
 

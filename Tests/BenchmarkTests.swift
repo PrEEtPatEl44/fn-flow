@@ -3,8 +3,11 @@ import Foundation
 import Testing
 @testable import fn_flow
 
-/// Latency + quality benchmark over a local dataset (bench/data/dataset.json, git-ignored:
-/// it's built from personal dictations). Needs the runtime (Parakeet server + Ollama) up.
+/// Latency + quality benchmark. Needs the runtime (Parakeet server + Ollama) up.
+///
+/// Dataset: bench/data/dataset.json if it exists (your own, git-ignored because it's built
+/// from personal dictations), otherwise the public synthetic sample bench/dataset.sample.json.
+/// FN_FLOW_BENCH_DATASET=path overrides both.
 ///
 ///   FN_FLOW_BENCH=1 FN_FLOW_BENCH_LABEL=run1 swift test --filter BenchmarkTests
 ///   python3 bench/compare.py run1-baseline run1-optimized
@@ -26,8 +29,17 @@ struct BenchmarkTests {
     static let dataDir = root.appendingPathComponent("bench/data")
     static let env = ProcessInfo.processInfo.environment
 
+    static var datasetURL: URL {
+        if let path = env["FN_FLOW_BENCH_DATASET"] { return URL(fileURLWithPath: path, relativeTo: root) }
+        let personal = dataDir.appendingPathComponent("dataset.json")
+        return FileManager.default.fileExists(atPath: personal.path)
+            ? personal
+            : root.appendingPathComponent("bench/dataset.sample.json")
+    }
+
     @Test func benchmark() async throws {
-        let dataset = try JSONDecoder().decode(BenchDataset.self, from: Data(contentsOf: Self.dataDir.appendingPathComponent("dataset.json")))
+        let dataset = try JSONDecoder().decode(BenchDataset.self, from: Data(contentsOf: Self.datasetURL))
+        print("BENCH dataset: \(Self.datasetURL.path) (\(dataset.cases.count) cases)")
         let label = Self.env["FN_FLOW_BENCH_LABEL"] ?? "run"
         let runs = Int(Self.env["FN_FLOW_BENCH_RUNS"] ?? "") ?? 3
         let variants = (Self.env["FN_FLOW_BENCH_VARIANTS"] ?? "baseline,optimized").split(separator: ",").map(String.init)

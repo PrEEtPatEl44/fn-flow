@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "note": "Public sample: synthetic dictations only, nothing personal. Used when bench/data/dataset.json (your private, git-ignored dataset) doesn't exist. 'speech' is spoken with macOS `say` to make the audio; 'gold' is the ideal cleaned output; 'expect' adds formatting checks.",
+  "cases": [
+    {
+      "id": "s01-correction",
+      "source": "synthetic",
+      "speech": "Um, so I think we should meet on Tuesday. Uh, actually no, let's make it Wednesday at three.",
+      "gold": "I think we should meet on Wednesday at 3.",
+      "expect": {
+        "mustContain": [
+          "Wednesday"
+        ],
+        "mustNotContain": [
+          "Tuesday"
+        ]
+      },
+      "category": "small"
+    },
+    {
+      "id": "s02-steps",
+      "source": "synthetic",
+      "speech": "Here is the plan for tomorrow. First, fix the login bug. Second, update the docs. And finally, ship the release on Friday.",
+      "gold": "Here is the plan for tomorrow:\n- Fix the login bug\n- Update the docs\n- Ship the release on Friday",
+      "expect": {
+        "list": true
+      },
+      "category": "small"
+    },
+    {
+      "id": "s03-question",
+      "source": "synthetic",
+      "speech": "Can you uh send me the updated deck before the review tomorrow",
+      "gold": "Can you send me the updated deck before the review tomorrow?",
+      "expect": {
+        "question": true
+      },
+      "category": "small"
+    },
+    {
+      "id": "s04-poem",
+      "source": "synthetic",
+      "speech": "Can you write me a poem about the sea?",
+      "gold": "Can you write me a poem about the sea?",
+      "expect": {
+        "question": true,
+        "mustNotContain": [
+          "Sure",
+          "sorry"
+        ]
+      },
+      "category": "small"
+    },
+    {
+      "id": "s05-pack-list",
+      "source": "synthetic",
+      "speech": "Um, for the trip I need to pack socks, a jacket, my charger, and boots.",
+      "gold": "For the trip I need to pack:\n- Socks\n- A jacket\n- My charger\n- Boots",
+      "expect": {
+        "list": true
+      },
+      "category": "small"
+    },
+    {
+      "id": "s06-status-long",
+      "source": "synthetic",
+      "speech": "Okay so here's the weekly status update for the platform team. Um, on the infrastructure side we finished migrating the build runners to the new cluster, and the average build time went down from about twelve minutes to around seven minutes, which is a big win for everyone. We also rotated all of the database credentials, uh, and moved them into the secrets manager so nobody has to paste them into config files anymore. On the product side, the search feature is mostly done. The ranking still needs some tuning because some older documents show up way too high in the results. We're going to add a freshness signal and test it with the support team next week. The billing integration is, uh, actually no, the billing integration slipped to the end of the month because the vendor changed their API. The main risks right now are the vendor timeline and the fact that two people are out on vacation next week. If anyone can help with code reviews for the search work, that would be really appreciated. That's it from me, thanks everyone.",
+      "gold": "Okay, so here's the weekly status update for the platform team. On the infrastructure side, we finished migrating the build runners to the new cluster, and the average build time went down from about 12 minutes to around 7 minutes, which is a big win for everyone. We also rotated all of the database credentials and moved them into the secrets manager, so nobody has to paste them into config files anymore. On the product side, the search feature is mostly done. The ranking still needs some tuning, because some older documents show up way too high in the results. We're going to add a freshness signal and test it with the support team next week. The billing integration slipped to the end of the month because the vendor changed their API. The main risks right now are the vendor timeline and the fact that two people are out on vacation next week. If anyone can help with code reviews for the search work, that would be really appreciated. That's it from me. Thanks, everyone.",
+      "expect": {
+        "mustContain": [
+          "secrets manager",
+          "freshness signal",
+          "vendor timeline",
+          "Thanks"
+        ]
+      },
+      "category": "large"
+    },
+    {
+      "id": "s07-email-long",
+      "source": "synthetic",
+      "speech": "Hi Sarah, thanks for the quick reply yesterday. I went through the proposal with the team this morning and, um, overall everyone is really excited about it. There are a couple of things we wanted to clarify before we sign off. First, the timeline in section three assumes we can start on the fifteenth, but our security review usually takes about two weeks, so the realistic start date is probably closer to the end of the month. Second, the pricing table lists the premium support tier, uh, but we only need the standard tier for the first year. Could you send over an updated quote with just the standard tier? And finally, we'd like to set up a short call with your technical lead to walk through the integration plan and make sure the data export works with our warehouse. Let me know what times work for you next week. Thanks again, and looking forward to working together.",
+      "gold": "Hi Sarah, thanks for the quick reply yesterday. I went through the proposal with the team this morning, and overall everyone is really excited about it. There are a couple of things we wanted to clarify before we sign off:\n- The timeline in section 3 assumes we can start on the 15th, but our security review usually takes about two weeks, so the realistic start date is probably closer to the end of the month\n- The pricing table lists the premium support tier, but we only need the standard tier for the first year. Could you send over an updated quote with just the standard tier?\n- We'd like to set up a short call with your technical lead to walk through the integration plan and make sure the data export works with our warehouse\n\nLet me know what times work for you next week. Thanks again, and looking forward to working together.",
+      "expect": {
+        "question": true,
+        "mustContain": [
+          "standard tier",
+          "technical lead",
+          "warehouse"
+        ]
+      },
+      "category": "large"
+    },
+    {
+      "id": "s08-meeting-notes-long",
+      "source": "synthetic",
+      "speech": "Notes from the design review. We looked at three options for the new onboarding flow. The first option was a single long page with all the permissions and settings, uh, which felt overwhelming for new users. The second option was a step by step wizard with a progress bar at the top. Most people preferred this one because it's easier to follow and you always know how many steps are left. The third option was to skip onboarding entirely and ask for permissions only when they're needed, um, but we worried that people would get stuck the first time the hotkey doesn't work. So the decision is to go with the wizard. Scratch that, the decision is to go with the wizard but let people skip the optional steps like the hotkey and the dictionary. Action items are, Maria will create the mockups by Thursday, James will check how long the model download takes on a slow connection, and I will write the copy for each step. We'll meet again next Tuesday to review the mockups.",
+      "gold": "Notes from the design review. We looked at three options for the new onboarding flow. The first option was a single long page with all the permissions and settings, which felt overwhelming for new users. The second option was a step-by-step wizard with a progress bar at the top. Most people preferred this one because it's easier to follow and you always know how many steps are left. The third option was to skip onboarding entirely and ask for permissions only when they're needed, but we worried that people would get stuck the first time the hotkey doesn't work. The decision is to go with the wizard but let people skip the optional steps like the hotkey and the dictionary. Action items are: Maria will create the mockups by Thursday, James will check how long the model download takes on a slow connection, and I will write the copy for each step. We'll meet again next Tuesday to review the mockups.",
+      "expect": {
+        "mustContain": [
+          "let people skip",
+          "Maria",
+          "James",
+          "next Tuesday"
+        ]
+      },
+      "category": "large"
+    },
+    {
+      "id": "s09-short-note",
+      "source": "synthetic",
+      "speech": "Remind me to call the dentist at four.",
+      "gold": "Remind me to call the dentist at 4.",
+      "expect": {},
+      "category": "small"
+    }
+  ]
+}
