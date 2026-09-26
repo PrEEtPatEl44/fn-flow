@@ -22,10 +22,15 @@ On first launch:
 ## Pipeline
 
 ```
-hotkey down → record 16 kHz WAV → overlay follows cursor
-hotkey up   → Parakeet (local server, :8765) → Nemotron (Ollama) → personal dictionary
-            → ⌘V into the focused app (or clipboard only) → watch for manual corrections
+hotkey down → record live 16 kHz audio → overlay
+while speaking → every few seconds: Parakeet (local server, :8765) → Nemotron (Ollama)
+hotkey up   → finish only the last few seconds → personal dictionary
+            → paste at the cursor and/or copy → watch for manual corrections
 ```
+
+- **Streaming:** transcription and cleanup happen *while you speak*, so the wait after
+  release stays about 0.2 s no matter how long you talk. Before this, a 50-second dictation
+  took about 7 s.
 
 - **Nemotron cleanup** removes fillers, applies self-corrections ("actually no",
   "scratch that"), and fixes punctuation and lists. If the LLM's output isn't built from
@@ -51,6 +56,20 @@ hotkey up   → Parakeet (local server, :8765) → Nemotron (Ollama) → persona
 swift build && swift test
 FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # needs the runtime running
 ```
+
+**Benchmark.** A latency and quality benchmark runs the original and the streaming pipeline
+side by side. It grades correctness (word error rate against a hand-written ideal output)
+and formatting.
+
+```bash
+FN_FLOW_BENCH=1 FN_FLOW_BENCH_LABEL=run swift test --filter BenchmarkTests
+python3 bench/compare.py run-baseline run-optimized
+```
+
+It reads a dataset from `bench/data/dataset.json`, which is git-ignored because it's built
+from personal dictations. Each case has an `id`, `category` (`small`/`medium`/`large`),
+`speech` (spoken with `say` to make the audio), `gold` (the ideal output), and optional
+`expect` checks. See `Tests/BenchmarkTests.swift`.
 
 Without an Apple Development signing identity, builds are signed ad-hoc and macOS
 forgets the Accessibility grant on every rebuild. Remove the app from System Settings ›

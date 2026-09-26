@@ -24,6 +24,8 @@ swift test                                    # unit tests (Swift Testing)
 swift test --filter TextCleanerTests          # one suite
 swift test --filter "CorrectionDiffTests/learnsMisheardName"  # one test
 FN_FLOW_INTEGRATION=1 swift test --filter PipelineIntegrationTests  # e2e; needs runtime up
+FN_FLOW_BENCH=1 FN_FLOW_BENCH_LABEL=x swift test --filter BenchmarkTests  # latency + quality benchmark
+python3 bench/compare.py x-baseline x-optimized                           # compare its two variants
 scripts/build_app.sh [--run|--install]        # signed .app in build/ (required for real use)
 runtime/install_runtime.sh                    # install/repair local models (~5 GB, idempotent)
 /usr/bin/log stream --predicate 'subsystem == "dev.nemotronflow.app"'   # app logs
@@ -33,17 +35,42 @@ runtime/install_runtime.sh                    # install/repair local models (~5 
 - `swift run` is not a usable way to test the app. Microphone and Accessibility permissions need the
   bundle's `Info.plist` and signature, so always test through `scripts/build_app.sh`.
 - There is no linter configured.
+- The benchmark reads `bench/data/dataset.json` (cases with a gold output each) and writes
+  `bench/results/`. Both are **git-ignored and local-only**: the dataset is built from personal
+  dictations. It runs a `baseline` (original, whole-file) and an `optimized` (streaming)
+  variant interleaved on every case, because this MacBook Air throttles, so runs minutes apart
+  aren't comparable. Knobs: `FN_FLOW_BENCH_RUNS`, `FN_FLOW_BENCH_SPEED` (feed audio faster than
+  real time), `FN_FLOW_BENCH_ONLY=id1,id2`.
 
 ## Architecture
 
 The flow is two processes, plus Ollama:
 
 ```
-HotkeyManager (CGEvent tap) → FlowController → RecordingManager (16 kHz LPCM WAV)
-  → AIBridge: POST localhost:8765/transcribe (runtime/server.py, Parakeet via parakeet-mlx)
-            → Ollama /api/chat (nemotron-mini) → PersonalDictionary.apply
-  → AccessibilityManager.deliver (⌘V or clipboard only) → CorrectionTracker (learns edits)
+HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngine, live 16 kHz)
+  → StreamingDictation, while the user speaks:
+      every few seconds: POST localhost:8765/transcribe (runtime/server.py, Parakeet via
+      parakeet-mlx, with word timings) → commit stable words → AIBridge.cleanChunk
+      (Ollama /api/chat, nemotron-mini, or rules)
+  → at release: transcribe + clean only the leftover → AIBridge.finalize (format, dictionary)
+  → AccessibilityManager.deliver (⌘V and/or clipboard) → CorrectionTracker (learns edits)
 ```
+
+- **Streaming is the latency fix (#7).** Waiting until release made the wait grow with
+  dictation length (median ~7 s for 50 s of speech). `StreamingDictation` does nearly all the
+  work while the user speaks, leaving ~0.2 s after release:
+  - It **commits only words with ≥1 s of speech after them** in the window. A word at the
+    window's edge is transcribed without its context, so Parakeet may mis-punctuate it (full
+    stops and capitals mid-sentence). Uncommitted audio is re-transcribed with the next
+    window. Keep this rule if you change the windowing.
+  - Cleanup is **speculative**: a chunk starting with a correction ("Scratch that, …")
+    re-cleans the previous chunk together with it.
+  - `AIBridge.process(audioURL:)` is the whole-file path (Undo, and the fallback if
+    streaming fails). Both paths share `cleanChunk` and `finalize`.
+- **Nemotron generation (~35–45 tokens/s on this M5 Air) is the hard limit**, and Ollama
+  serves one request at a time, so concurrent requests don't help. MLX was tested: no faster,
+  and it reworded more. So: skip Nemotron for chunks the rules fully handle
+  (`TextCleaner.needsLLM`), cap its output length, and keep the model loaded (24 h).
 
 - **`FlowController`** is the state machine (idle → listening → processing) and the only place
   that wires the managers together. Most other types are `@MainActor` singletons (`.shared`).
@@ -57,8 +84,9 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (16 kHz LPCM
   unconstrained, `nemotron-mini` answers, summarizes or outlines dictated instructions ("we
   need to add…"). Three layers stop that:
   - The system prompt states its narrow job.
-  - `AIBridge.cleanUp` sends ~45-word sentence chunks, because the small model rewrites
-    long inputs.
+  - Text goes in ~45-word chunks (`TextCleaner.chunks`; run-on sentences are split by
+    `cleanupUnits`, and `joinCleaned` repairs mid-sentence joins), because the small model
+    rewrites long inputs.
   - `TextCleaner.isFaithful` rejects any chunk that adds words, drops content words, or
     opens with a reply ("Sure, here's…"). A rejected chunk falls back to `TextCleaner.clean`.
   Formatting (bullets, question marks) is deliberately **not** in the prompt:
