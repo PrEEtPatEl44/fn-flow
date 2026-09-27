@@ -74,11 +74,11 @@ scripts/build_app.sh --install   # builds, signs, copies to ~/Applications, and 
 
 On first launch:
 
-1. **Settings › Models → Download** the speech model (NVIDIA Parakeet TDT 0.6B, ~450 MB, once).
+1. **Settings › Local engine → Download** the speech model (NVIDIA Parakeet TDT 0.6B, ~450 MB, once).
 2. *Optional:* install [Ollama](https://ollama.com/download), then download **NVIDIA Nemotron**
-   in the same tab for smarter cleanup. Without it, built-in rules still remove fillers and
+   in the same card for smarter cleanup. Without it, built-in rules still remove fillers and
    apply corrections.
-3. **Settings › Permissions:** allow **Accessibility** (for the hotkey and pasting) and the
+3. **Settings › Mac access:** allow **Accessibility** (for the hotkey and pasting) and the
    **Microphone**.
 4. Hold **Right ⌥**, speak, and let go. Press **Esc** to cancel.
 
