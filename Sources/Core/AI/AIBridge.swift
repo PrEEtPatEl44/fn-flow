@@ -4,7 +4,6 @@ enum FlowError: LocalizedError {
     case microphoneUnavailable
     case microphonePermissionDenied
     case runtimeNotReady
-    case transcriptionFailed(String)
     case nothingHeard
 
     var errorDescription: String? {
@@ -12,7 +11,6 @@ enum FlowError: LocalizedError {
         case .microphoneUnavailable: "Microphone unavailable"
         case .microphonePermissionDenied: "Microphone access denied"
         case .runtimeNotReady: "Models not ready. Open Settings"
-        case .transcriptionFailed(let detail): "Transcription failed: \(detail)"
         case .nothingHeard: "Didn't catch that"
         }
     }
@@ -36,8 +34,8 @@ struct DictationResult: Sendable {
     let cleanupTime: TimeInterval
 }
 
-/// The local AI pipeline: Parakeet ASR (runtime server) -> Nemotron cleanup (Ollama)
-/// -> personal dictionary.
+/// The local AI pipeline: Parakeet speech-to-text (in-process, `SpeechEngine`) -> Nemotron
+/// cleanup (Ollama, optional) -> personal dictionary.
 @MainActor
 final class AIBridge {
     static let shared = AIBridge()
@@ -101,7 +99,7 @@ final class AIBridge {
     func process(audioURL: URL) async throws -> DictationResult {
         let clock = ContinuousClock()
         let transcriptionStart = clock.now
-        let raw = try await transcribe(wav: Data(contentsOf: audioURL))
+        let raw = try await transcription(WAV.decode(Data(contentsOf: audioURL))).text
         let transcriptionTime = (clock.now - transcriptionStart).seconds
         guard !TextCleaner.words(raw).isEmpty else { throw FlowError.nothingHeard }
 
@@ -165,40 +163,13 @@ final class AIBridge {
         if TextCleaner.hasBacktrackCue(output) {
             output = TextCleaner.tidy(TextCleaner.applyBacktracking(output))
         }
-        return (output, true)
+        // It occasionally keeps a plain filler ("team, um, on…"); those never belong.
+        return (TextCleaner.removeFillers(output), true)
     }
 
-    func transcribe(wav: Data) async throws -> String {
-        try await transcription(wav: wav).text
-    }
-
-    /// Transcript plus per-sentence timings (seconds from the start of `wav`).
-    func transcription(wav: Data) async throws -> Transcription {
-        let url = RuntimeManager.shared.asrBaseURL.appendingPathComponent("transcribe")
-        var request = URLRequest(url: url, timeoutInterval: 60)
-        request.httpMethod = "POST"
-        let boundary = "Boundary-\(UUID().uuidString)"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        var body = Data()
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".utf8))
-        body.append(Data("Content-Type: audio/wav\r\n\r\n".utf8))
-        body.append(wav)
-        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.upload(for: request, from: body)
-        } catch {
-            throw FlowError.runtimeNotReady
-        }
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let detail = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.detail ?? "server error"
-            throw FlowError.transcriptionFailed(detail)
-        }
-        return try JSONDecoder().decode(Transcription.self, from: data)
+    /// Transcribes 16 kHz mono audio in-process (see `SpeechEngine`).
+    func transcription(_ samples: [Int16]) async throws -> Transcription {
+        try await SpeechEngine.shared.transcribe(samples)
     }
 
     /// Nemotron cleanup via Ollama's chat API.
@@ -246,29 +217,21 @@ final class AIBridge {
     }
 }
 
-struct Transcription: Decodable, Sendable {
-    /// A timed piece of the transcript (a sentence or a word).
-    struct Span: Decodable, Sendable {
+/// A transcript with word timings (seconds from the start of the audio).
+struct Transcription: Sendable {
+    struct Span: Sendable {
         let text: String
         let start: TimeInterval
         let end: TimeInterval
     }
 
     let text: String
-    /// Missing from older runtime servers.
-    let sentences: [Span]?
-    /// Words with punctuation attached; missing from older runtime servers.
-    let words: [Span]?
-    /// `<unk>` tokens Parakeet still produced after the server's retry (already removed
-    /// from the text). Missing from older runtime servers.
-    var unknownTokens: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case text, sentences, words
-        case unknownTokens = "unk_tokens"
-    }
+    /// Words with punctuation attached; nil when timings aren't available.
+    var words: [Span]?
+    /// `<unk>` tokens Parakeet still produced after `SpeechEngine`'s retry (already removed
+    /// from the text).
+    var unknownTokens = 0
 }
-private struct ErrorResponse: Decodable { let detail: String }
 
 private struct ChatMessage: Codable { let role: String; let content: String }
 private struct ChatRequest: Encodable {

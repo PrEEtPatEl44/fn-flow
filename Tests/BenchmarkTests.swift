@@ -38,6 +38,7 @@ struct BenchmarkTests {
     }
 
     @Test func benchmark() async throws {
+        try await TestModels.ensureSpeechModel()
         let dataset = try JSONDecoder().decode(BenchDataset.self, from: Data(contentsOf: Self.datasetURL))
         print("BENCH dataset: \(Self.datasetURL.path) (\(dataset.cases.count) cases)")
         let label = Self.env["FN_FLOW_BENCH_LABEL"] ?? "run"

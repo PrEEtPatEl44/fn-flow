@@ -39,7 +39,7 @@ enum TextCleaner {
 
     static let unknownToken = "<unk>"
 
-    /// Removes Parakeet's `<unk>` tokens (see runtime/server.py) and the gaps they leave.
+    /// Removes Parakeet's `<unk>` tokens (see `SpeechEngine`) and the gaps they leave.
     static func stripUnknownTokens(_ text: String) -> String {
         guard text.contains(unknownToken) else { return text }
         return text.replacingOccurrences(of: unknownToken, with: " ")
@@ -50,6 +50,21 @@ enum TextCleaner {
 
     static func hasBacktrackCue(_ text: String) -> Bool {
         backtrackCues.contains { text.range(of: #"\b\#($0)\b"#, options: [.regularExpression, .caseInsensitive]) != nil }
+    }
+
+    /// Removes plain fillers (um, uh, er…) and fixes the spacing they leave. Also applied to
+    /// Nemotron's output, which occasionally keeps one.
+    static func removeFillers(_ text: String) -> String {
+        guard hasFillers(text) else { return text }
+        let removed = text.replacingOccurrences(of: fillerPattern, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #" +([,.;:!?])"#, with: "$1", options: .regularExpression)
+            .replacingOccurrences(of: #",\s*,"#, with: ",", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        // A filler that opened the text hands its capital letter to the next word.
+        if text.first?.isUppercase == true, removed.first?.isLowercase == true {
+            return removed.prefix(1).uppercased() + removed.dropFirst()
+        }
+        return removed
     }
 
     static func hasFillers(_ text: String) -> Bool {

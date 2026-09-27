@@ -28,14 +28,14 @@ private struct MenuBarIcon: View {
 
 private struct MenuContent: View {
     @ObservedObject private var flow = FlowController.shared
-    @ObservedObject private var runtime = RuntimeManager.shared
+    @ObservedObject private var models = ModelManager.shared
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var history = DictationHistory.shared
 
     var body: some View {
         Text("Hold \(settings.hotkey.displayName) to dictate")
-        Text("Speech-to-text: \(runtime.asrStatus.label)")
-        Text("Nemotron cleanup: \(settings.refineWithLLM ? runtime.llmStatus.label : "Off")")
+        Text("Speech-to-text: \(models.speechStatus.label)")
+        Text("Nemotron cleanup: \(settings.refineWithLLM ? models.cleanupStatus.label : "Off")")
         Divider()
         Button("Copy Last Transcript") { flow.copyLastTranscript() }
             .disabled(history.entries.isEmpty)
@@ -83,17 +83,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Don't let the mic prompt (which waits on the user) delay starting the models.
         Task { _ = await RecordingManager.requestMicAccess() }
         Task {
-            await RuntimeManager.shared.bootstrap()
+            await ModelManager.shared.bootstrap()
             // First run: guide the user through whatever is still missing.
-            if !RuntimeManager.shared.isInstalled {
+            if !ModelManager.shared.isSpeechModelInstalled {
                 SettingsWindowController.shared.show(tab: .models)
             } else if !AccessibilityManager.shared.isTrusted || !RecordingManager.micAuthorized {
                 SettingsWindowController.shared.show(tab: .permissions)
             }
         }
-    }
-
-    func applicationWillTerminate(_ notification: Notification) {
-        RuntimeManager.shared.stopASR()
     }
 }

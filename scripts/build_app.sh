@@ -1,6 +1,7 @@
 #!/bin/bash
-# Builds build/Fn-flow.app (release) with Info.plist, bundled runtime scripts,
-# and a code signature (your Apple Development identity if present, else ad-hoc).
+# Builds build/Fn-flow.app (release) with Info.plist
+# and a code signature (your Apple Development identity if present, else a local
+# self-signed one, so the Accessibility grant survives rebuilds).
 #
 #   scripts/build_app.sh            # build
 #   scripts/build_app.sh --install  # build and copy to ~/Applications
@@ -18,8 +19,6 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/FnFlow"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-cp runtime/install_runtime.sh runtime/server.py "$APP/Contents/Resources/"
-chmod +x "$APP/Contents/Resources/install_runtime.sh"
 
 # macOS ties the Accessibility grant to the code signature. Ad-hoc signatures change on
 # every build (so the grant silently stops applying); a stable identity keeps it.
