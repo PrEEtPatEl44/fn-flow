@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! The more specific, the faster it gets fixed.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: I held the hotkey, said "…", and the text pasted was "…"
+    validations:
+      required: true
+  - type: textarea
+    id: history
+    attributes:
+      label: Raw vs pasted text (if it's about transcription)
+      description: Settings › History shows what Parakeet heard next to what was pasted. Copy both here.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: macOS 15.3, MacBook Air M3
+    validations:
+      required: true
+  - type: dropdown
+    id: cleanup
+    attributes:
+      label: Text cleanup
+      options:
+        - Nemotron via Ollama
+        - Rules only (no Ollama)
+        - Not sure
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "Optional: output of `/usr/bin/log show --last 5m --predicate 'subsystem == \"dev.nemotronflow.app\"'`"
+      render: text
