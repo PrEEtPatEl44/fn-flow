@@ -603,3 +603,55 @@ enum TestModels {
         guard models.isReady else { throw NotReady(status: models.speechStatus.label) }
     }
 }
+
+@MainActor
+struct UsageStatsTests {
+    private func makeStats() -> UsageStats {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("usage-\(UUID().uuidString).json")
+        return UsageStats(fileURL: url, seed: [])
+    }
+
+    @Test func countsWordsAndApps() {
+        let stats = makeStats()
+        stats.record(text: "Ship the build today.", app: "Slack")
+        stats.record(text: "Two more — words", app: "Slack")
+        stats.record(text: "Hello", app: nil)
+        let today = stats.day(Date())
+        #expect(today.words == 8)  // "—" is not a word
+        #expect(today.dictations == 3)
+        #expect(stats.rankedApps.first?.app == "Slack")
+        #expect(stats.rankedApps.first?.count == 2)
+    }
+
+    @Test func streakCountsBackFromYesterdayUntilTodayHasActivity() {
+        let stats = makeStats()
+        let calendar = Calendar.current
+        let today = Date()
+        for back in 1...3 {
+            stats.record(text: "hi", app: nil, date: calendar.date(byAdding: .day, value: -back, to: today)!)
+        }
+        #expect(stats.streak(until: today) == 3)
+        stats.record(text: "hi", app: nil, date: today)
+        #expect(stats.streak(until: today) == 4)
+        // A gap ends the streak.
+        stats.reset()
+        stats.record(text: "hi", app: nil, date: calendar.date(byAdding: .day, value: -2, to: today)!)
+        #expect(stats.streak(until: today) == 0)
+    }
+
+    @Test func topWordsSkipStopWordsAndUnknownTokens() {
+        let texts = ["Deploy the design review", "design the deploy", TextCleaner.stripUnknownTokens("<unk> <unk> design")]
+        let words = UsageStats.topWords(in: texts)
+        #expect(words.first?.word == "design")
+        #expect(words.first?.count == 3)
+        #expect(!words.contains { $0.word == "the" || $0.word == "unk" })
+    }
+
+    @Test func accentMixesAndPicksReadableInk() {
+        #expect(Accent.mix(0xFFFFFF, 0x000000, 0.5) == 0x808080)
+        #expect(Accent(rgb: 0xD6EE89).name == "Lime")
+        #expect(Accent(rgb: 0x123456).name == "Custom")
+        #expect(Accent.luminance(0xD6EE89) > 155)
+        #expect(Accent.luminance(0x719BA5) < 155)
+    }
+}

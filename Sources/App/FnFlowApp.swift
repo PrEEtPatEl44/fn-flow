@@ -34,9 +34,9 @@ private struct MenuContent: View {
 
     var body: some View {
         Text("Hold \(settings.hotkey.displayName) to dictate")
-        Text("Speech-to-text: \(models.speechStatus.label)")
-        Text("Nemotron cleanup: \(settings.refineWithLLM ? models.cleanupStatus.label : "Off")")
+        Text("Speech: \(models.speechStatus.label) · Cleanup: \(settings.refineWithLLM ? models.cleanupStatus.label : "Rules")")
         Divider()
+        Button("Open Fn-flow") { AppWindowController.shared.show(.home) }
         Button("Copy Last Transcript") { flow.copyLastTranscript() }
             .disabled(history.entries.isEmpty)
         if !history.entries.isEmpty {
@@ -49,9 +49,8 @@ private struct MenuContent: View {
                 }
             }
         }
-        Button("History…") { SettingsWindowController.shared.show(tab: .history) }
         Divider()
-        Button("Settings…") { SettingsWindowController.shared.show() }
+        Button("Settings…") { AppWindowController.shared.show(.settings) }
             .keyboardShortcut(",")
         Button("Quit Fn-flow") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
@@ -61,6 +60,12 @@ private struct MenuContent: View {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionTimer: Timer?
+
+    /// Opening Fn-flow again (Finder, Spotlight, Launchpad) while it's running shows its window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        AppWindowController.shared.show()
+        return true
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -86,9 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await ModelManager.shared.bootstrap()
             // First run: guide the user through whatever is still missing.
             if !ModelManager.shared.isSpeechModelInstalled {
-                SettingsWindowController.shared.show(tab: .models)
+                AppWindowController.shared.show(anchor: .engine)
             } else if !AccessibilityManager.shared.isTrusted || !RecordingManager.micAuthorized {
-                SettingsWindowController.shared.show(tab: .permissions)
+                AppWindowController.shared.show(anchor: .access)
             }
         }
     }

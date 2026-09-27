@@ -170,7 +170,7 @@ struct FlowOverlay: View {
 
     private var accent: Color {
         switch model.phase {
-        case .listening: .blue
+        case .listening: Accent(rgb: AppSettings.shared.accentRGB).color
         case .processing: .purple
         case .success: .green
         case .hidden: .clear

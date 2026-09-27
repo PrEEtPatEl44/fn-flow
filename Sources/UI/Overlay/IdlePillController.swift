@@ -175,7 +175,7 @@ private struct IdlePillView: View {
             }
             Divider()
             Button("Hide Resting Pill") { settings.showIdlePill = false }
-            Button("Settings…") { SettingsWindowController.shared.show(tab: .general) }
+            Button("Settings…") { AppWindowController.shared.show(.settings) }
         }
     }
 
