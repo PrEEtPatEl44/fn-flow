@@ -174,6 +174,9 @@ private struct Pane: View {
         }
         .clipShape(shape)
         .overlay(shape.strokeBorder(Theme.frameLine, lineWidth: 1))
+        // The sky is always bright, so text on it keeps its dark colors in dark mode too.
+        // (Cards switch themselves to dark.)
+        .environment(\.colorScheme, .light)
         .padding(.trailing, 9)
         .padding(.bottom, 10)
     }

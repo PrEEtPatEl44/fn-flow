@@ -4,8 +4,9 @@ import SwiftUI
 /// Fn-flow's design tokens (#4), shared by the app window and the overlay.
 ///
 /// The look: a dark window frame with an icon rail, an inset pane over a pixel-cloud sky
-/// (`CloudWallpaper`), and frosted dark-teal cards on top. Text directly on the sky adapts to
-/// light and dark mode; cards look the same in both. The accent is the user's choice.
+/// (`CloudWallpaper`), and frosted dark-teal cards on top. The sky stays bright in both light
+/// and dark mode, so the pane renders in light mode and the cards in dark mode. The accent is
+/// the user's choice.
 enum Theme {
     // MARK: Window frame
     static let chrome = Color(rgb: 0x242627)

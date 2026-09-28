@@ -3,19 +3,14 @@ import SwiftUI
 
 /// The pane's backdrop: a teal sky with cream pixel-textured clouds along the bottom. Drawn
 /// in a 1600 × 1000 space and scaled to fill (cropping, like `preserveAspectRatio slice`).
-/// In dark mode it's the same scene at dusk.
+/// It stays bright in dark mode too: only the cards on top are dark.
 struct CloudWallpaper: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         Canvas(rendersAsynchronously: true) { context, size in
             let scale = max(size.width / 1600, size.height / 1000)
             context.translateBy(x: (size.width - 1600 * scale) / 2, y: (size.height - 1000 * scale) / 2)
             context.scaleBy(x: scale, y: scale)
             Self.draw(in: &context)
-            if colorScheme == .dark {
-                context.fill(Path(CGRect(x: 0, y: 0, width: 1600, height: 1000)), with: .color(Color(rgb: 0x0B1618).opacity(0.58)))
-            }
         }
         .accessibilityHidden(true)
     }
