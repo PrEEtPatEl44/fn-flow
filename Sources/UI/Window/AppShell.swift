@@ -160,20 +160,31 @@ private struct Pane: View {
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.window, style: .continuous)
         ZStack {
             CloudWallpaper()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    content
-                        .frame(maxWidth: 1100)
-                        .padding(.horizontal, 44)
-                        .padding(.top, 26)
-                        .padding(.bottom, 44)
-                        .frame(maxWidth: .infinity)
-                        .id(navigation.section)
+            if navigation.section == .home {
+                // Home keeps its header and Insights card in place and scrolls only the
+                // dictation list, so it fills the pane instead of sitting in a scroll view.
+                HomeView(navigation: navigation)
+                    .frame(maxWidth: 1100, maxHeight: .infinity, alignment: .top)
+                    .padding(.horizontal, 44)
+                    .padding(.top, 26)
+                    .frame(maxWidth: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        content
+                            .frame(maxWidth: 1100)
+                            .padding(.horizontal, 44)
+                            .padding(.top, 26)
+                            .padding(.bottom, 44)
+                            .frame(maxWidth: .infinity)
+                            .id(navigation.section)
+                    }
+                    .scrollIndicators(.never)
+                    .onChange(of: navigation.settingsAnchor) { _, anchor in
+                        scroll(proxy, to: anchor)
+                    }
+                    .onAppear { scroll(proxy, to: navigation.settingsAnchor) }
                 }
-                .onChange(of: navigation.settingsAnchor) { _, anchor in
-                    scroll(proxy, to: anchor)
-                }
-                .onAppear { scroll(proxy, to: navigation.settingsAnchor) }
             }
         }
         .clipShape(shape)
@@ -187,7 +198,7 @@ private struct Pane: View {
 
     @ViewBuilder private var content: some View {
         switch navigation.section {
-        case .home: HomeView(navigation: navigation)
+        case .home: EmptyView()
         case .insights: InsightsView()
         case .wordBook: WordBookView()
         case .settings: SettingsPage()

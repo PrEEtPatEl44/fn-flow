@@ -5,27 +5,56 @@ import SwiftUI
 /// a preview of Insights.
 struct HomeView: View {
     @ObservedObject var navigation: AppNavigation
-    @ObservedObject private var history = DictationHistory.shared
     @ObservedObject private var settings = AppSettings.shared
+    @State private var query = ""
+    @State private var appFilter: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
-            PageHeader(title: "Home") {
-                DictateButton(hotkey: settings.hotkey.displayName)
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(title: "Home") {
+                    DictateButton(hotkey: settings.hotkey.displayName)
+                }
+                Greeting()
             }
             AdaptiveStack(breakpoint: 740) { wide in
                 if wide {
                     HStack(alignment: .top, spacing: 32) {
-                        RecentDictations()
+                        RecentDictations(query: $query, appFilter: $appFilter)
                         InsightsPreview(navigation: navigation).frame(width: 272)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 24) {
                         InsightsPreview(navigation: navigation)
-                        RecentDictations()
+                        RecentDictations(query: $query, appFilter: $appFilter)
                     }
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+/// "Good morning, Preet": by time of day, with the first name from the Mac account.
+private struct Greeting: View {
+    private static let firstName = NSFullUserName().split(separator: " ").first.map(String.init)
+
+    var body: some View {
+        // Re-evaluated every minute, so it turns to "Good afternoon" without reopening.
+        TimelineView(.everyMinute) { context in
+            Text([Self.salutation(at: context.date), Self.firstName].compactMap { $0 }.joined(separator: ", "))
+                .font(.system(size: 28, weight: .semibold))
+                .tracking(-0.6)
+                .foregroundStyle(Theme.paneText)
+        }
+    }
+
+    static func salutation(at date: Date) -> String {
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12: "Good morning"
+        case 12..<17: "Good afternoon"
+        case 17..<22: "Good evening"
+        default: "Working late"
         }
     }
 }
@@ -56,13 +85,14 @@ private struct DictateButton: View {
 
 // MARK: - Recent dictations
 
-private struct RecentDictations: View {
+/// Search and the app filter (with Clear History), on the first day header's line.
+private struct HistoryTools: View {
+    @Binding var query: String
+    @Binding var appFilter: String?
+    /// Brings the tools into view when ⌘F is pressed while they're scrolled away.
+    let reveal: () -> Void
     @ObservedObject private var history = DictationHistory.shared
-    @ObservedObject private var settings = AppSettings.shared
-    @State private var query = ""
     @State private var searching = false
-    @State private var appFilter: String?
-    @State private var expanded: UUID?
     @State private var confirmClear = false
     @FocusState private var searchFocused: Bool
 
@@ -70,53 +100,8 @@ private struct RecentDictations: View {
         Array(Set(history.entries.compactMap(\.app))).sorted()
     }
 
-    private var rows: [DictationHistory.Entry] {
-        let term = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return history.entries.filter { entry in
-            (appFilter == nil || entry.app == appFilter)
-                && (term.isEmpty || "\(entry.text) \(entry.raw) \(entry.app ?? "")".lowercased().contains(term))
-        }
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            heading
-            VStack(spacing: 0) {
-                Rectangle().fill(Theme.paneLine).frame(height: 1)
-                if rows.isEmpty {
-                    emptyState.padding(.top, 18)
-                } else {
-                    ForEach(rows) { entry in
-                        HistoryRow(entry: entry, expanded: expanded == entry.id) {
-                            withAnimation(.snappy(duration: 0.2)) { expanded = expanded == entry.id ? nil : entry.id }
-                        }
-                    }
-                }
-            }
-        }
-        .confirmationDialog("Delete all \(history.entries.count) dictations?", isPresented: $confirmClear) {
-            Button("Delete All", role: .destructive) { history.clear() }
-        } message: {
-            Text("This also resets Insights. It can't be undone.")
-        }
-    }
-
-    private var heading: some View {
         HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("Recent dictations").font(Theme.Font.heading)
-                    Text("\(history.entries.count)").font(Theme.Font.small).foregroundStyle(Theme.paneDim)
-                }
-                if let median = history.medianLatency() {
-                    Text("Median \(DictationTimings.format(median.seconds)) from finishing to text delivered")
-                        .font(Theme.Font.small)
-                        .foregroundStyle(Theme.paneDim)
-                        .monospacedDigit()
-                }
-            }
-            .foregroundStyle(Theme.paneText)
-            Spacer()
             if searching {
                 TextField("Search dictations", text: $query)
                     .textFieldStyle(.plain)
@@ -130,7 +115,7 @@ private struct RecentDictations: View {
                     .onExitCommand { closeSearch() }
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-            IconButton(symbol: searching ? "xmark" : "magnifyingglass", help: searching ? "Close search" : "Search dictations") {
+            IconButton(symbol: searching ? "xmark" : "magnifyingglass", help: searching ? "Close search (Esc)" : "Search dictations (⌘F)") {
                 searching ? closeSearch() : openSearch()
             }
             .keyboardShortcut("f", modifiers: .command)
@@ -154,9 +139,102 @@ private struct RecentDictations: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Filter by app, or clear history")
+            .pointerCursor()
+            .help(appFilter.map { "Showing \($0) only. Filter by app, or clear history" } ?? "Filter by app, or clear history")
         }
-        .frame(minHeight: 43)
+        .confirmationDialog("Delete all \(history.entries.count) dictations?", isPresented: $confirmClear) {
+            Button("Delete All", role: .destructive) { history.clear() }
+        } message: {
+            Text("This also resets Insights. It can't be undone.")
+        }
+    }
+
+    private func openSearch() {
+        reveal()
+        withAnimation(.snappy(duration: 0.19)) { searching = true }
+        DispatchQueue.main.async { searchFocused = true }
+    }
+
+    private func closeSearch() {
+        withAnimation(.snappy(duration: 0.19)) {
+            searching = false
+            query = ""
+        }
+    }
+}
+
+/// Dictations grouped under "Today", "Yesterday", then dates. The only part of Home that scrolls.
+private struct RecentDictations: View {
+    @Binding var query: String
+    @Binding var appFilter: String?
+    @ObservedObject private var history = DictationHistory.shared
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var expanded: UUID?
+
+    private var rows: [DictationHistory.Entry] {
+        let term = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return history.entries.filter { entry in
+            (appFilter == nil || entry.app == appFilter)
+                && (term.isEmpty || "\(entry.text) \(entry.raw) \(entry.app ?? "")".lowercased().contains(term))
+        }
+    }
+
+    /// Newest day first; entries keep their order within a day.
+    private var days: [(day: Date, entries: [DictationHistory.Entry])] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: rows) { calendar.startOfDay(for: $0.date) }
+        return grouped.keys.sorted(by: >).map { day in
+            (day, grouped[day]!.sorted { $0.date > $1.date })
+        }
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Not lazy (history holds at most 200), so the tools keep their state and ⌘F
+                // after scrolling past them.
+                VStack(alignment: .leading, spacing: 0) {
+                    let tools = HistoryTools(query: $query, appFilter: $appFilter) {
+                        withAnimation(.snappy(duration: 0.25)) { proxy.scrollTo(Self.top, anchor: .top) }
+                    }
+                    if rows.isEmpty {
+                        HStack { Spacer(); tools }.id(Self.top).padding(.bottom, 10)
+                        emptyState
+                    } else {
+                        ForEach(days, id: \.day) { group in
+                            let first = group.day == days.first?.day
+                            HStack(spacing: 6) {
+                                header(group.day)
+                                if first {
+                                    Spacer()
+                                    tools
+                                }
+                            }
+                            .frame(minHeight: first ? 32 : nil)
+                            .padding(.top, first ? 0 : 26)
+                            .padding(.bottom, 4)
+                            .id(first ? AnyHashable(Self.top) : AnyHashable(group.day))
+                            ForEach(group.entries) { entry in
+                                HistoryRow(entry: entry, expanded: expanded == entry.id) {
+                                    withAnimation(.snappy(duration: 0.2)) { expanded = expanded == entry.id ? nil : entry.id }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.bottom, 44)
+            }
+            .scrollIndicators(.never)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private static let top = "top"
+
+    private func header(_ day: Date) -> some View {
+        Text(Self.title(for: day))
+            .font(Theme.Font.label)
+            .foregroundStyle(Theme.paneDim)
     }
 
     @ViewBuilder private var emptyState: some View {
@@ -175,16 +253,15 @@ private struct RecentDictations: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.paneLine, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
     }
 
-    private func openSearch() {
-        withAnimation(.snappy(duration: 0.19)) { searching = true }
-        DispatchQueue.main.async { searchFocused = true }
-    }
-
-    private func closeSearch() {
-        withAnimation(.snappy(duration: 0.19)) {
-            searching = false
-            query = ""
+    /// "Today", "Yesterday", "Wednesday, Sep 24", or with the year once it's a past year.
+    static func title(for day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        if calendar.isDate(day, equalTo: Date(), toGranularity: .year) {
+            return day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
         }
+        return day.formatted(.dateTime.month(.abbreviated).day().year())
     }
 }
 
@@ -197,15 +274,6 @@ private struct HistoryRow: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 15) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(Self.day(entry.date))
-                    Text(entry.date, format: .dateTime.hour().minute())
-                }
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Theme.paneDim)
-                .frame(width: 80, alignment: .leading)
-                .padding(.top, 2)
-
                 VStack(alignment: .leading, spacing: 9) {
                     Text(entry.text)
                         .font(Theme.Font.body)
@@ -231,11 +299,11 @@ private struct HistoryRow: View {
 
                 HStack(spacing: 2) {
                     IconButton(symbol: expanded ? "chevron.up" : "chevron.down", help: expanded ? "Hide details" : "Show what Parakeet heard", action: toggle)
-                    IconButton(symbol: "doc.on.doc", help: "Copy") {
+                    IconButton(symbol: "doc.on.doc", help: "Copy text") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(entry.text, forType: .string)
                     }
-                    IconButton(symbol: "trash", help: "Delete") { DictationHistory.shared.delete(entry) }
+                    IconButton(symbol: "trash", help: "Delete this dictation") { DictationHistory.shared.delete(entry) }
                 }
                 .opacity(hovering || expanded ? 1 : 0.45)
             }
@@ -281,13 +349,6 @@ private struct HistoryRow: View {
         case .mixed: "Nemotron cleaned up part of this; rules handled sections where its output wasn't faithful"
         case .rules: "Rule-based cleanup (Nemotron off, unavailable, or its output wasn't faithful)"
         }
-    }
-
-    static func day(_ date: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "TODAY" }
-        if calendar.isDateInYesterday(date) { return "YESTERDAY" }
-        return date.formatted(.dateTime.month(.abbreviated).day()).uppercased()
     }
 }
 
@@ -348,6 +409,8 @@ private struct InsightsPreview: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .pointerCursor()
+        .help("Open Insights")
         .accessibilityLabel("Open Insights")
     }
 }
