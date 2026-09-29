@@ -69,6 +69,7 @@ private struct TermsCard: View {
                                         Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                                     }
                                     .buttonStyle(.plain)
+                                    .pointerCursor()
                                     .foregroundStyle(Theme.cardMuted)
                                     .help("Remove \(term)")
                                     .accessibilityLabel("Remove \(term)")

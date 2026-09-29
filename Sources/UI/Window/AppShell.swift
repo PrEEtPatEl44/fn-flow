@@ -62,6 +62,7 @@ private struct ChromeButton: View {
         .help(help)
         .accessibilityLabel(help)
         .onHover { hovering = $0 }
+        .pointerCursor()
     }
 }
 
@@ -86,7 +87,7 @@ private struct Rail: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Array(AppSection.allCases.enumerated()), id: \.element) { index, section in
-                RailItem(section: section, selected: navigation.section == section, expanded: navigation.railExpanded) {
+                RailItem(section: section, shortcut: index + 1, selected: navigation.section == section, expanded: navigation.railExpanded) {
                     navigation.section = section
                 }
                 .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
@@ -103,6 +104,7 @@ private struct Rail: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
+            .pointerCursor()
             .help("Fn-flow Home")
             .frame(maxWidth: .infinity, alignment: navigation.railExpanded ? .leading : .center)
         }
@@ -115,6 +117,7 @@ private struct Rail: View {
 
 private struct RailItem: View {
     let section: AppSection
+    let shortcut: Int
     let selected: Bool
     let expanded: Bool
     let action: () -> Void
@@ -140,10 +143,11 @@ private struct RailItem: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(expanded ? "" : section.title)
+        .help(expanded ? "⌘\(shortcut)" : "\(section.title) (⌘\(shortcut))")
         .accessibilityLabel(section.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .onHover { hovering = $0 }
+        .pointerCursor()
     }
 }
 
@@ -231,7 +235,8 @@ private struct EngineIndicator: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("Local engine status")
+        .pointerCursor()
+        .help("Local engine status: click for details")
         .accessibilityLabel("Engine status: \(status)")
         .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
         .onAppear {
@@ -254,6 +259,8 @@ private struct EngineIndicator: View {
                         .foregroundStyle(accent.onCard)
                 }
                 .buttonStyle(.plain)
+                .pointerCursor()
+                .help("Open the Local engine settings")
             }
             .padding(.bottom, 8)
             step("Microphone", permissions.microphone ? "Ready" : "Permission needed")

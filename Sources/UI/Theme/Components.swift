@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // Building blocks for the app window, styled with `Theme` tokens.
@@ -184,6 +185,7 @@ struct FlowButtonStyle: ButtonStyle {
                 .opacity(isEnabled ? 1 : 0.5)
                 .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
                 .onHover { hovering = $0 }
+                .pointerCursor(isEnabled)
         }
 
         private var foreground: Color {
@@ -236,6 +238,37 @@ struct IconButton: View {
         .help(help)
         .accessibilityLabel(help)
         .onHover { hovering = $0 }
+        .pointerCursor()
+    }
+}
+
+extension View {
+    /// Shows the pointing hand over a clickable element (not over native controls or text).
+    func pointerCursor(_ enabled: Bool = true) -> some View {
+        modifier(PointerCursor(enabled: enabled))
+    }
+}
+
+private struct PointerCursor: ViewModifier {
+    let enabled: Bool
+    @State private var pushed = false
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.pointerStyle(enabled ? .link : nil)
+        } else {
+            // Balance every push with a pop, even if the view goes away while hovered.
+            content
+                .onHover { set($0 && enabled) }
+                .onChange(of: enabled) { _, on in if !on { set(false) } }
+                .onDisappear { set(false) }
+        }
+    }
+
+    private func set(_ on: Bool) {
+        guard on != pushed else { return }
+        if on { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        pushed = on
     }
 }
 
@@ -260,6 +293,7 @@ struct FlowToggleStyle: ToggleStyle {
             .animation(.snappy(duration: 0.15), value: configuration.isOn)
         }
         .buttonStyle(.plain)
+        .pointerCursor(isEnabled)
         .opacity(isEnabled ? 1 : 0.45)
         .accessibilityRepresentation {
             Toggle(isOn: configuration.$isOn) { configuration.label }

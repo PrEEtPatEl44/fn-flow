@@ -43,6 +43,7 @@ private struct AccentCard: View {
                                     lineWidth: settings.accentRGB == preset.rgb ? 2 : 1))
                         }
                         .buttonStyle(.plain)
+                        .pointerCursor()
                         .help(preset.name)
                         .accessibilityLabel("\(preset.name) accent")
                         .accessibilityAddTraits(settings.accentRGB == preset.rgb ? .isSelected : [])
@@ -55,6 +56,7 @@ private struct AccentCard: View {
                     }
                     .fixedSize()
                     .padding(.leading, 4)
+                    .help("Pick any accent color")
                 }
             }
             .padding(.vertical, 17)
@@ -86,12 +88,14 @@ private struct WritingCard: View {
                     .toggleStyle(FlowToggleStyle())
                     .labelsHidden()
                     .disabled(settings.pasteAtCursor && !settings.copyToClipboard)
+                    .help(settings.pasteAtCursor && !settings.copyToClipboard ? "Turn on Copy to clipboard first: one of the two stays on" : "")
             }
             SettingRow(title: "Copy to clipboard", detail: copyDetail, divider: false) {
                 Toggle("Copy to clipboard", isOn: $settings.copyToClipboard)
                     .toggleStyle(FlowToggleStyle())
                     .labelsHidden()
                     .disabled(settings.copyToClipboard && !settings.pasteAtCursor)
+                    .help(settings.copyToClipboard && !settings.pasteAtCursor ? "Turn on Paste at the cursor first: one of the two stays on" : "")
             }
         }
     }
@@ -133,7 +137,7 @@ private struct HotkeyRecorder: View {
             .buttonStyle(FlowButtonStyle())
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Presets")
+            .help("Choose a preset shortcut")
         }
         .onDisappear { if isRecording { stop() } }
     }
@@ -184,6 +188,7 @@ private struct OverlayCard: View {
                     .toggleStyle(FlowToggleStyle())
                     .labelsHidden()
                     .disabled(settings.overlayPlacement == .followCursor)
+                    .help(settings.overlayPlacement == .followCursor ? "Not available while the overlay follows the pointer" : "")
             }
         }
     }
@@ -208,6 +213,7 @@ private struct EngineCard: View {
                 switch models.speechStatus {
                 case .notInstalled:
                     Button("Download") { models.downloadSpeechModel() }.buttonStyle(FlowButtonStyle(kind: .primary))
+                        .help("Download Parakeet (\(ModelManager.speechModelSize)) from Hugging Face")
                 case .failed:
                     Button("Try Again") {
                         if models.isSpeechModelInstalled { Task { await models.loadSpeechModel() } }
@@ -233,11 +239,14 @@ private struct EngineCard: View {
                     switch models.cleanupStatus {
                     case .notInstalled:
                         Button("Download") { models.downloadCleanupModel() }.buttonStyle(FlowButtonStyle())
+                            .help("Pull \(settings.llmModel) through Ollama")
                     case .downloading:
                         Button("Cancel") { models.cancelCleanupDownload() }.buttonStyle(FlowButtonStyle(kind: .quiet))
                     case .unavailable:
                         Link("Get Ollama", destination: ModelManager.ollamaDownloadURL).buttonStyle(FlowButtonStyle())
+                            .help("Opens the Ollama download page in your browser")
                         Button("Check Again") { Task { await models.refreshCleanupModel() } }.buttonStyle(FlowButtonStyle(kind: .quiet))
+                            .help("Look for Ollama again")
                     case .failed:
                         Button("Try Again") { models.downloadCleanupModel() }.buttonStyle(FlowButtonStyle())
                     default:
@@ -250,6 +259,7 @@ private struct EngineCard: View {
                         .textFieldStyle(FlowFieldStyle())
                         .frame(width: 160)
                         .onSubmit { Task { await models.refreshCleanupModel() } }
+                        .help("Press Return to check that Ollama has this model")
                 }
             }
             if let size = models.legacyRuntimeSize {
@@ -361,6 +371,7 @@ private struct AccessCard: View {
                 Text(permissions.hotkeyActive ? "ACTIVE" : "WAITING")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(permissions.hotkeyActive ? Theme.cardMuted : Theme.warning)
+                    .help(permissions.hotkeyActive ? "Your shortcut is being listened for" : "Waiting for Accessibility permission")
             }
         }
     }
@@ -378,6 +389,7 @@ private struct PermissionState: View {
                 .foregroundStyle(accent.onCard)
         } else {
             Button("Grant…", action: grant).buttonStyle(FlowButtonStyle(kind: .primary))
+                .help("Ask macOS for access, or open System Settings to allow it")
         }
     }
 }

@@ -19,6 +19,7 @@ struct InsightsView: View {
                 .foregroundStyle(accent.onPane)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Theme.paneChip))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.paneChipLine, lineWidth: 1))
+                .help("Days in a row with at least one dictation")
             }
             .padding(.bottom, 12)
 
@@ -188,6 +189,7 @@ private struct AppsCard: View {
                             .monospacedDigit()
                             .frame(width: 34, alignment: .trailing)
                     }
+                    .help("\(item.app) · \(item.count.formatted()) dictation\(item.count == 1 ? "" : "s")")
                 }
             }
         }
@@ -217,6 +219,7 @@ private struct WordsCard: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.cardLine, lineWidth: 1))
+                            .help("“\(item.word)” · used \(item.count) time\(item.count == 1 ? "" : "s")")
                         }
                     }
                 } else {
