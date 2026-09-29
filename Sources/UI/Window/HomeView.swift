@@ -5,16 +5,13 @@ import SwiftUI
 /// a preview of Insights.
 struct HomeView: View {
     @ObservedObject var navigation: AppNavigation
-    @ObservedObject private var settings = AppSettings.shared
     @State private var query = ""
     @State private var appFilter: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
             VStack(alignment: .leading, spacing: 18) {
-                PageHeader(title: "Home") {
-                    DictateButton(hotkey: settings.hotkey.displayName)
-                }
+                PageHeader(title: "Home") { EmptyView() }
                 Greeting()
             }
             AdaptiveStack(breakpoint: 740) { wide in
@@ -56,30 +53,6 @@ private struct Greeting: View {
         case 17..<22: "Good evening"
         default: "Working late"
         }
-    }
-}
-
-/// Starts a hands-free dictation into the app you were using before this window.
-private struct DictateButton: View {
-    let hotkey: String
-
-    var body: some View {
-        Button {
-            // Hand focus back to the previous app, so the text lands there.
-            NSApp.hide(nil)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                FlowController.shared.begin(mode: .handsFree)
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "mic")
-                Text("Dictate")
-                Kbd(text: hotkey)
-            }
-            .fixedSize()
-        }
-        .buttonStyle(FlowButtonStyle(kind: .primary))
-        .help("Dictate into the app you were using. Click ✓ or press the hotkey to finish.")
     }
 }
 

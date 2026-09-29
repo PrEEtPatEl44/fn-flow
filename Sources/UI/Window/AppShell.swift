@@ -216,7 +216,8 @@ private struct Pane: View {
 
 // MARK: - Engine status
 
-/// "Ready" / "Listening" / "Needs attention", with each part's state in a popover.
+/// "Ready" / "Listening" / "Needs attention", with the shortcut and each part's state in a
+/// popover. Hovering opens it; clicking keeps it open until you click elsewhere.
 private struct EngineIndicator: View {
     @ObservedObject var navigation: AppNavigation
     @ObservedObject private var flow = FlowController.shared
@@ -224,12 +225,18 @@ private struct EngineIndicator: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var permissions = PermissionsMonitor.shared
     @State private var showing = false
+    @State private var pinned = false
     @State private var hovering = false
+    @State private var hoveringPopover = false
+    @State private var closing: Task<Void, Never>?
     @State private var pulse = false
     @Environment(\.accent) private var accent
 
     var body: some View {
-        Button { showing.toggle() } label: {
+        Button {
+            pinned.toggle()
+            showing = pinned
+        } label: {
             HStack(spacing: 8) {
                 Circle()
                     .fill(issues.isEmpty ? accent.color : Theme.warning)
@@ -245,11 +252,19 @@ private struct EngineIndicator: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            if inside { closing?.cancel(); showing = true } else { closeSoon() }
+        }
         .pointerCursor()
-        .help("Local engine status: click for details")
         .accessibilityLabel("Engine status: \(status)")
-        .popover(isPresented: $showing, arrowEdge: .bottom) { popover }
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            popover.onHover { inside in
+                hoveringPopover = inside
+                if inside { closing?.cancel() } else { closeSoon() }
+            }
+        }
+        .onChange(of: showing) { _, open in if !open { pinned = false } }
         .onAppear {
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
         }
@@ -274,6 +289,7 @@ private struct EngineIndicator: View {
                 .help("Open the Local engine settings")
             }
             .padding(.bottom, 8)
+            shortcut
             step("Microphone", permissions.microphone ? "Ready" : "Permission needed")
             step("Speech · Parakeet", models.speechStatus.label)
             step("Cleanup · \(settings.refineWithLLM ? settings.llmModel : "Rules")",
@@ -292,6 +308,31 @@ private struct EngineIndicator: View {
         .foregroundStyle(Theme.cardText)
         .background(Theme.card)
         .environment(\.colorScheme, .dark)
+    }
+
+    /// Closes the hover-opened popover once the pointer has left both it and the button.
+    /// The delay lets the pointer cross the gap between them.
+    private func closeSoon() {
+        closing?.cancel()
+        closing = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, !pinned, !hovering, !hoveringPopover else { return }
+            showing = false
+        }
+    }
+
+    private var shortcut: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Theme.cardLineSoft).frame(height: 1)
+            HStack(spacing: 6) {
+                Text("Dictate").foregroundStyle(Theme.cardMuted)
+                Spacer()
+                Text("Hold")
+                Kbd(text: settings.hotkey.displayName)
+            }
+            .font(.system(size: 11))
+            .padding(.vertical, 7)
+        }
     }
 
     private func step(_ name: String, _ value: String) -> some View {
