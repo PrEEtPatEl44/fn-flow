@@ -32,18 +32,21 @@ struct CloudWallpaper: View {
         far.opacity = 0.5
         far.drawLayer { layer in
             let shape = union(rect: CGRect(x: 1115, y: 720, width: 570, height: 310),
-                              circles: [(1168, 733, 73), (1257, 687, 83), (1356, 731, 91), (1476, 662, 105)])
+                              circles: [(1150, 800, 60), (1168, 733, 73), (1257, 687, 83), (1356, 731, 91), (1476, 662, 105),
+                                        (1600, 740, 70)])
             layer.fill(shape, with: .color(Color(rgb: 0xE3D6AE)))
             layer.clip(to: shape)
             layer.fill(Path(canvas), with: .tiledImage(cloudPixels))
         }
 
         cloud(in: &context, bounds: CGRect(x: 0, y: 430, width: 700, height: 570), texture: 0.8,
-              shape: union(rect: CGRect(x: -80, y: 675, width: 750, height: 400),
-                           circles: [(-12, 639, 132), (132, 573, 125), (257, 636, 121), (372, 698, 137), (515, 767, 118), (72, 828, 190)]))
-        cloud(in: &context, bounds: CGRect(x: 540, y: 660, width: 1000, height: 340), texture: 0.72,
-              shape: union(rect: CGRect(x: 575, y: 835, width: 925, height: 180),
-                           circles: [(642, 820, 99), (760, 769, 90), (860, 795, 82), (936, 856, 104), (1111, 923, 98), (1230, 899, 86)]))
+              shape: union(rect: CGRect(x: -80, y: 675, width: 700, height: 400),
+                           circles: [(-12, 639, 132), (132, 573, 125), (257, 636, 121), (372, 698, 137), (515, 767, 118), (600, 760, 100),
+                                     (72, 828, 190)]))
+        cloud(in: &context, bounds: CGRect(x: 520, y: 660, width: 1020, height: 340), texture: 0.72,
+              shape: union(rect: CGRect(x: 575, y: 835, width: 845, height: 180),
+                           circles: [(610, 960, 80), (642, 820, 99), (760, 769, 90), (860, 795, 82), (936, 856, 104), (1100, 860, 95),
+                                     (1240, 865, 90), (1380, 910, 100)]))
     }
 
     private static func cloud(in context: inout GraphicsContext, bounds: CGRect, texture: Double, shape: Path) {
