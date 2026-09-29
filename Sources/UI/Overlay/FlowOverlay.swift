@@ -106,8 +106,8 @@ struct FlowOverlay: View {
 
     private var pill: some View {
         let stack = isVertical
-            ? AnyLayout(VStackLayout(spacing: 10))
-            : AnyLayout(HStackLayout(spacing: 10))
+            ? AnyLayout(VStackLayout(spacing: 7))
+            : AnyLayout(HStackLayout(spacing: 7))
         return stack {
             switch model.phase {
             case .listening:
@@ -115,24 +115,24 @@ struct FlowOverlay: View {
                     FlowController.shared.cancel(notify: true)
                 }
                 Waveform(level: recorder.level, axis: isVertical ? .vertical : .horizontal)
-                    .frame(width: isVertical ? 22 : 72, height: isVertical ? 72 : 22)
+                    .frame(width: isVertical ? 16 : 54, height: isVertical ? 54 : 16)
                 circleButton("checkmark", help: "Finish and paste", filled: true) {
                     FlowController.shared.finish()
                 }
             case .processing:
-                ProgressView().controlSize(.small).tint(.white)
-                    .frame(width: 18, height: 18)
+                ProgressView().controlSize(.mini).tint(.white)
+                    .frame(width: 15, height: 15)
                 if !isVertical { label("Transcribing…") }
             case .success(let title, _):
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 15, height: 15)
                 if !isVertical { label(title) }
             case .hidden:
                 EmptyView()
             }
         }
-        .padding(model.phase == .listening ? 6 : 11)
-        .padding(isVertical ? .vertical : .horizontal, model.phase == .listening ? 0 : 6)
+        .padding(model.phase == .listening ? 4 : 8)
+        .padding(isVertical ? .vertical : .horizontal, model.phase == .listening ? 0 : 4)
         .background {
             Capsule().fill(Color(white: 0.08))
             Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 1)
@@ -141,7 +141,7 @@ struct FlowOverlay: View {
             // Glow: breathes with the voice level while listening.
             Capsule()
                 .fill(accent)
-                .blur(radius: 14)
+                .blur(radius: 10)
                 .opacity(model.phase == .listening ? 0.25 + Double(recorder.level) * 0.5 : 0.3)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6), value: recorder.level)
         }
@@ -151,9 +151,9 @@ struct FlowOverlay: View {
     private func circleButton(_ symbol: String, help: String, filled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(filled ? .black : .white)
-                .frame(width: 28, height: 28)
+                .frame(width: 22, height: 22)
                 .background(Circle().fill(filled ? .white : .white.opacity(0.22)))
         }
         .buttonStyle(.plain)
@@ -162,7 +162,7 @@ struct FlowOverlay: View {
 
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
             .foregroundStyle(.white)
             .lineLimit(1)
             .contentTransition(.opacity)
@@ -196,16 +196,16 @@ struct Waveform: View {
         TimelineView(.animation) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let layout = axis == .horizontal
-                ? AnyLayout(HStackLayout(alignment: .center, spacing: 3))
-                : AnyLayout(VStackLayout(alignment: .center, spacing: 3))
+                ? AnyLayout(HStackLayout(alignment: .center, spacing: 2))
+                : AnyLayout(VStackLayout(alignment: .center, spacing: 2))
             layout {
                 ForEach(0..<bars, id: \.self) { i in
                     let wobble = (sin(t * 9 + Double(i) * 0.8) + 1) / 2
                     let center = 1 - abs(Double(i) - Double(bars - 1) / 2) / Double(bars)
-                    let length = 4 + CGFloat(Double(level) * center * (0.45 + 0.55 * wobble)) * 16
+                    let length = 3 + CGFloat(Double(level) * center * (0.45 + 0.55 * wobble)) * 12
                     Capsule()
                         .fill(.white)
-                        .frame(width: axis == .horizontal ? 3 : length, height: axis == .horizontal ? length : 3)
+                        .frame(width: axis == .horizontal ? 2.5 : length, height: axis == .horizontal ? length : 2.5)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

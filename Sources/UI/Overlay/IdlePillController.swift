@@ -198,28 +198,28 @@ private struct IdlePillView: View {
     /// The mic button against the edge, with the hint on the screen-center side.
     @ViewBuilder private var expanded: some View {
         switch placement {
-        case .leftCenter: HStack(spacing: 8) { micButton; hint }
-        case .rightCenter: HStack(spacing: 8) { hint; micButton }
-        default: VStack(spacing: 8) { hint; micButton }
+        case .leftCenter: HStack(spacing: 6) { micButton; hint }
+        case .rightCenter: HStack(spacing: 6) { hint; micButton }
+        default: VStack(spacing: 6) { hint; micButton }
         }
     }
 
     private var micButton: some View {
         let vertical = placement.isVertical
         return Image(systemName: "mic.fill")
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: vertical ? 40 : 64, height: vertical ? 64 : 40)
+            .frame(width: vertical ? 30 : 48, height: vertical ? 48 : 30)
             .background(Capsule().fill(Color(white: 0.16)))
             .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
     }
 
     private var hint: some View {
         (Text("Dictate ") + Text(hotkeyLabel).fontWeight(.bold))
-            .font(.system(size: 14, weight: .regular, design: .rounded))
+            .font(.system(size: 12, weight: .regular, design: .rounded))
             .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
             .background(Capsule().fill(Color(white: 0.08)))
             .overlay(Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 1))
             .fixedSize()
