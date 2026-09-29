@@ -17,7 +17,7 @@ body:
     id: history
     attributes:
       label: Raw vs pasted text (if it's about transcription)
-      description: Settings › History shows what Parakeet heard next to what was pasted. Copy both here.
+      description: On Home, expand a dictation (chevron) to see what Parakeet heard next to what was pasted. Copy both here.
   - type: input
     id: macos
     attributes:

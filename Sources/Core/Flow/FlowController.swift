@@ -65,14 +65,14 @@ final class FlowController: ObservableObject {
 
         guard ModelManager.shared.isReady else {
             log.error("Speech model not ready: \(ModelManager.shared.speechStatus.label, privacy: .public)")
-            showError(FlowError.runtimeNotReady.localizedDescription, settingsTab: .models)
+            showError(FlowError.runtimeNotReady.localizedDescription, settingsAnchor: .engine)
             return
         }
         guard RecordingManager.micAuthorized else {
             log.error("Microphone not authorized")
             Task {
                 if await !RecordingManager.requestMicAccess() {
-                    showError(FlowError.microphonePermissionDenied.localizedDescription, settingsTab: .permissions)
+                    showError(FlowError.microphonePermissionDenied.localizedDescription, settingsAnchor: .access)
                 }
             }
             return
@@ -199,9 +199,9 @@ final class FlowController: ObservableObject {
         NSPasteboard.general.setString(last.text, forType: .string)
     }
 
-    private func showError(_ message: String, settingsTab: SettingsTab? = nil) {
-        let action = settingsTab.map { tab in
-            OverlayNotice.Action(title: "Open Settings") { SettingsWindowController.shared.show(tab: tab) }
+    private func showError(_ message: String, settingsAnchor: SettingsAnchor? = nil) {
+        let action = settingsAnchor.map { anchor in
+            OverlayNotice.Action(title: "Open Settings") { AppWindowController.shared.show(anchor: anchor) }
         }
         overlay.notify(OverlayNotice(
             message: message, icon: "exclamationmark.triangle.fill", tint: .yellow, action: action, duration: 4

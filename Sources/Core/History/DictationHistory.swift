@@ -40,6 +40,8 @@ final class DictationHistory: ObservableObject {
     }
 
     func add(_ result: DictationResult, app: String?, pasted: Bool, timings: DictationTimings) {
+        // Before inserting: on first use, UsageStats seeds itself from the existing entries.
+        UsageStats.shared.record(text: result.text, app: app)
         entries.insert(Entry(
             id: UUID(), date: Date(), raw: result.raw, text: result.text,
             notes: result.notes, engine: result.engine, app: app, pasted: pasted, timings: timings
@@ -53,9 +55,11 @@ final class DictationHistory: ObservableObject {
         save()
     }
 
+    /// Deletes every dictation, and the Insights totals built from them.
     func clear() {
         entries = []
         save()
+        UsageStats.shared.reset()
     }
 
     private func save() {

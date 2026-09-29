@@ -101,7 +101,7 @@ HotkeyManager (CGEvent tap) → FlowController → RecordingManager (AVAudioEngi
     is present, the model is pulled through its API (`/api/pull`, streamed progress).
     Without it, dictation uses the rule-based cleanup.
   - The pre-#6 Python runtime folder (`…/NemotronFlow/runtime/`, ~5 GB) is no longer used and
-    never deleted automatically; Settings › Models offers to remove it.
+    never deleted automatically; Settings › Local engine offers to remove it.
 - **The LLM is a cleanup stage, not an assistant, and its output is untrusted.** Left
   unconstrained, `nemotron-mini` answers, summarizes or outlines dictated instructions ("we
   need to add…"). Three layers stop that:

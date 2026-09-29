@@ -6,8 +6,8 @@ docs, and code are all welcome.
 - **New here?** Start with a [`good first issue`](https://github.com/PrEEtPatEl44/fn-flow/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
   Each has a clear scope and acceptance criteria.
 - **Have a question or an idea?** Open a [Discussion](https://github.com/PrEEtPatEl44/fn-flow/discussions) first.
-- **Found a bug?** Use the bug report template. Settings › History shows the raw transcript
-  next to what was pasted, which is the most useful thing to include.
+- **Found a bug?** Use the bug report template. On Home, expand a dictation to see the raw
+  transcript next to what was pasted, which is the most useful thing to include.
 - **Security issue?** Please report it privately: see [SECURITY.md](SECURITY.md).
 
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -23,7 +23,7 @@ swift build && swift test          # unit tests, no models needed
 scripts/build_app.sh --run         # build the signed app and launch it
 ```
 
-On first launch, **Settings › Models** downloads the speech model (~450 MB). Ollama is
+On first launch, **Settings › Local engine** downloads the speech model (~450 MB). Ollama is
 optional; without it, cleanup uses built-in rules.
 
 Test the app through `scripts/build_app.sh`, not `swift run`: the Microphone and
@@ -38,7 +38,8 @@ identity, so macOS keeps the Accessibility permission across rebuilds.
 | Live audio, streaming | `Sources/Core/Audio/`, `Sources/Core/AI/StreamingDictation.swift` |
 | Speech-to-text (Parakeet, in-process) | `Sources/Core/AI/SpeechEngine.swift`, `Sources/Core/Models/ModelManager.swift` |
 | Cleanup (Nemotron + rules), lists | `Sources/Core/AI/AIBridge.swift`, `Sources/Core/AI/TextCleaner*.swift` |
-| Overlay, Settings UI | `Sources/UI/` |
+| App window (Home, Insights, Word Book, Settings) | `Sources/UI/Window/`, design tokens in `Sources/UI/Theme/` |
+| Overlay | `Sources/UI/Overlay/` |
 
 [CLAUDE.md](CLAUDE.md) explains the architecture and the non-obvious decisions (for
 example, why streaming only commits words with speech after them). Read the relevant part

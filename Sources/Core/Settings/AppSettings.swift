@@ -47,6 +47,8 @@ final class AppSettings: ObservableObject {
     @Published var refineWithLLM: Bool { didSet { defaults.set(refineWithLLM, forKey: "refineWithLLM") } }
     @Published var llmModel: String { didSet { defaults.set(llmModel, forKey: "llmModel") } }
     @Published var learnFromCorrections: Bool { didSet { defaults.set(learnFromCorrections, forKey: "learnFromCorrections") } }
+    /// The app's accent color as 0xRRGGBB (Settings › Accent color).
+    @Published var accentRGB: Int { didSet { defaults.set(accentRGB, forKey: "accentRGB") } }
 
     private init() {
         defaults.register(defaults: [
@@ -57,6 +59,7 @@ final class AppSettings: ObservableObject {
             "refineWithLLM": true,
             "llmModel": "nemotron-mini",
             "learnFromCorrections": true,
+            "accentRGB": 0xD6EE89,
         ])
         hotkey = (defaults.data(forKey: "hotkey")).flatMap { try? JSONDecoder().decode(Hotkey.self, from: $0) } ?? .default
         Self.migrateOutputMode(defaults)
@@ -67,6 +70,7 @@ final class AppSettings: ObservableObject {
         refineWithLLM = defaults.bool(forKey: "refineWithLLM")
         llmModel = defaults.string(forKey: "llmModel") ?? "nemotron-mini"
         learnFromCorrections = defaults.bool(forKey: "learnFromCorrections")
+        accentRGB = defaults.integer(forKey: "accentRGB")
     }
 
     /// Earlier versions had one "outputMode" (paste / clipboard only) plus "restoreClipboard".
